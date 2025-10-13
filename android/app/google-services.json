@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "770750397309",
+    "project_id": "intern-chat-app-8fcbd",
+    "storage_bucket": "intern-chat-app-8fcbd.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:770750397309:android:c936734dc982de9510aa14",
+        "android_client_info": {
+          "package_name": "com.example.internchat"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD0sYEeshKU_PEm4SEB3PRMuMNZ5-1mA_E"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
