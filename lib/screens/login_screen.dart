@@ -35,7 +35,10 @@ class _LoginScreenState extends State<LoginScreen> {
       _passwordController.text.trim(),
     );
 
-    if (!success && mounted) {
+    if (success && mounted) {
+      // Login successful - navigation will be handled by AuthProvider and SplashScreen
+      print('✅ Login successful');
+    } else if (!success && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(authProvider.errorMessage ?? 'Login failed'),
@@ -53,7 +56,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
     final success = await authProvider.signInWithGoogle();
 
-    if (!success && mounted) {
+    if (success && mounted) {
+      // Google sign-in successful - navigation will be handled by AuthProvider
+      print('✅ Google sign-in successful');
+    } else if (!success && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(authProvider.errorMessage ?? 'Google sign-in failed'),

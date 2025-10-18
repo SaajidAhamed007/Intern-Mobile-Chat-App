@@ -45,7 +45,68 @@ class ChatProvider with ChangeNotifier {
         .getMessagesStream(_currentChatUserId!)
         .listen(
           (messagesList) {
-            _messages = messagesList;
+            // Get pending messages that haven't been sent yet
+            final pendingMessages = _messages
+                .where(
+                  (msg) =>
+                      msg.status == 'pending' &&
+                      msg.messageId.startsWith('temp_'),
+                )
+                .toList();
+
+            // Process server messages to update status based on isSeen field
+            final processedMessages = messagesList.map((msg) {
+              if (msg.senderId == currentUserId) {
+                // For our own messages, update status based on isSeen
+                if (msg.isSeen) {
+                  return msg.copyWith(status: 'seen');
+                } else {
+                  return msg.copyWith(status: 'delivered');
+                }
+              }
+              return msg;
+            }).toList();
+
+            // Merge pending messages with server messages
+            // If a server message matches a pending message (same content, timestamp close),
+            // replace the pending with the server message
+            final mergedMessages = <MessageModel>[];
+            final usedServerMessages = <String>{};
+
+            // First, try to match pending messages with server messages
+            for (final pendingMsg in pendingMessages) {
+              bool matched = false;
+              for (final serverMsg in processedMessages) {
+                if (!usedServerMessages.contains(serverMsg.messageId) &&
+                    serverMsg.senderId == currentUserId &&
+                    serverMsg.message == pendingMsg.message &&
+                    serverMsg.timestamp
+                            .difference(pendingMsg.timestamp)
+                            .abs()
+                            .inSeconds <
+                        10) {
+                  // Found a match - use server message with updated status
+                  mergedMessages.add(serverMsg);
+                  usedServerMessages.add(serverMsg.messageId);
+                  matched = true;
+                  break;
+                }
+              }
+
+              // If no match found, keep the pending message
+              if (!matched) {
+                mergedMessages.add(pendingMsg);
+              }
+            }
+
+            // Add remaining server messages that weren't matched
+            for (final serverMsg in processedMessages) {
+              if (!usedServerMessages.contains(serverMsg.messageId)) {
+                mergedMessages.add(serverMsg);
+              }
+            }
+
+            _messages = mergedMessages;
             _isLoading = false;
             _clearError();
             notifyListeners();
@@ -61,32 +122,69 @@ class ChatProvider with ChangeNotifier {
         );
   }
 
-  /// Send a text message
+  /// Send a text message with immediate UI update
   Future<bool> sendMessage(String message, {String type = 'text'}) async {
-    if (_currentChatUserId == null || message.trim().isEmpty) return false;
+    if (_currentChatUserId == null || message.trim().isEmpty || _isSending) {
+      return false;
+    }
 
     _isSending = true;
     _clearError();
     notifyListeners();
 
+    // Generate a temporary message ID
+    final tempMessageId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
+
+    // Create a pending message that appears immediately in UI
+    // Note: Uses local timestamp for immediate display, but server will use
+    // server timestamp for proper ordering
+    final pendingMessage = MessageModel(
+      messageId: tempMessageId,
+      senderId: currentUserId,
+      receiverId: _currentChatUserId!,
+      message: message.trim(),
+      type: type,
+      timestamp: DateTime.now(), // Local time for pending display
+      isSeen: false,
+      status: 'pending', // This will show the clock icon
+    );
+
+    // Add the pending message to UI immediately
+    _messages.insert(
+      0,
+      pendingMessage,
+    ); // Insert at beginning since we use reverse order
+    notifyListeners();
+
     try {
-      final success = await _chatService.sendMessage(
+      // Send the actual message to server
+      await _chatService.sendMessage(
         receiverId: _currentChatUserId!,
         message: message.trim(),
         type: type,
       );
 
-      if (!success) {
-        _setError('Failed to send message');
-      }
-
-      return success;
-    } catch (e) {
-      _setError('Error sending message: $e');
-      return false;
-    } finally {
+      // If we reach here, the message was sent successfully
+      // Don't remove the pending message here - let the stream matching logic handle it
+      // The pending message will be replaced by the server message when it arrives
       _isSending = false;
       notifyListeners();
+      return true;
+    } catch (e) {
+      // If sending failed, update status to failed
+      final messageIndex = _messages.indexWhere(
+        (msg) => msg.messageId == tempMessageId,
+      );
+      if (messageIndex != -1) {
+        _messages[messageIndex] = _messages[messageIndex].copyWith(
+          status: 'failed',
+        );
+        notifyListeners();
+      }
+      _setError('Error sending message: $e');
+      _isSending = false;
+      notifyListeners();
+      return false;
     }
   }
 

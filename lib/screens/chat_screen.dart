@@ -1,7 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:image_picker/image_picker.dart';
 import '../models/contact_model.dart';
+import '../models/message_model.dart';
 import '../providers/chat_provider.dart';
+import '../services/media_upload_service.dart';
+import '../widgets/message_skeleton.dart';
+import '../widgets/chat_bubble.dart';
+import '../widgets/profile_picture.dart';
+import '../widgets/media_selection_bottom_sheet.dart';
 
 class ChatScreen extends StatefulWidget {
   final ContactModel contact;
@@ -12,22 +19,90 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   final TextEditingController _messageController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  late AnimationController _messageAnimationController;
+  late Animation<double> _messageAnimation;
+  String? _lastMessageId;
+  bool _isUploadingMedia = false;
 
   @override
   void initState() {
     super.initState();
+
+    // Initialize animation controller
+    _messageAnimationController = AnimationController(
+      duration: const Duration(milliseconds: 400),
+      vsync: this,
+    );
+
+    _messageAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _messageAnimationController,
+        curve: Curves.elasticOut,
+      ),
+    );
+
     // Initialize chat when screen loads
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final chatProvider = Provider.of<ChatProvider>(context, listen: false);
       chatProvider.initializeChat(widget.contact.id);
+      _scrollToBottomInstant();
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Listen for message changes and update AnimatedList
+    _updateAnimatedList();
+  }
+
+  void _updateAnimatedList() {
+    final chatProvider = Provider.of<ChatProvider>(context, listen: false);
+    final newMessages = chatProvider.messages;
+
+    // Check if we need to add new messages to the animated list
+    if (newMessages.isNotEmpty &&
+        (newMessages.first.messageId != _lastMessageId)) {
+      _lastMessageId = newMessages.first.messageId;
+      // Trigger animation for new message
+      _messageAnimationController.reset();
+      _messageAnimationController.forward();
+    }
+  }
+
+  void _scrollToBottom() {
+    if (_scrollController.hasClients) {
+      // Use a small delay to ensure the message is rendered first
+      Future.delayed(const Duration(milliseconds: 50), () {
+        if (_scrollController.hasClients) {
+          _scrollController.animateTo(
+            0.0, // For reversed list, 0.0 is the bottom
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeInOut,
+          );
+        }
+      });
+    }
+  }
+
+  void _scrollToBottomInstant() {
+    if (_scrollController.hasClients) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_scrollController.hasClients) {
+          _scrollController.jumpTo(0.0);
+        }
+      });
+    }
   }
 
   @override
   void dispose() {
     _messageController.dispose();
+    _scrollController.dispose();
+    _messageAnimationController.dispose();
     // Clear chat when leaving screen
     final chatProvider = Provider.of<ChatProvider>(context, listen: false);
     chatProvider.clearChat();
@@ -38,22 +113,88 @@ class _ChatScreenState extends State<ChatScreen> {
     final message = _messageController.text.trim();
     if (message.isEmpty) return;
 
-    final chatProvider = Provider.of<ChatProvider>(context, listen: false);
-    final success = await chatProvider.sendMessage(message);
+    // Clear the input field immediately (like WhatsApp)
+    _messageController.clear();
 
-    if (success) {
-      _messageController.clear();
-    } else {
-      // Show error message
-      if (mounted) {
+    final chatProvider = Provider.of<ChatProvider>(context, listen: false);
+
+    // Send message (this will add it to UI immediately with pending status)
+    await chatProvider.sendMessage(message);
+
+    // Scroll to bottom after sending message
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollToBottom();
+    });
+  }
+
+  Future<void> _showMediaPicker() async {
+    await MediaSelectionBottomSheet.show(
+      context,
+      onMediaSelected: _handleMediaSelection,
+    );
+  }
+
+  Future<void> _handleMediaSelection(
+    String mediaType,
+    ImageSource? source,
+  ) async {
+    setState(() {
+      _isUploadingMedia = true;
+    });
+
+    try {
+      String? mediaUrl;
+
+      switch (mediaType) {
+        case 'image':
+          if (source != null) {
+            mediaUrl = await MediaUploadService.uploadImageFromSource(
+              source: source,
+            );
+          }
+          break;
+        case 'video':
+          if (source != null) {
+            mediaUrl = await MediaUploadService.uploadVideoFromSource(
+              source: source,
+            );
+          }
+          break;
+        case 'audio':
+          mediaUrl = await MediaUploadService.uploadAudioFromPicker();
+          break;
+      }
+
+      if (mediaUrl != null && mounted) {
+        final chatProvider = Provider.of<ChatProvider>(context, listen: false);
+        await chatProvider.sendMessage(mediaUrl, type: mediaType);
+
+        // Scroll to bottom after sending media
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _scrollToBottom();
+        });
+      } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              chatProvider.errorMessage ?? 'Failed to send message',
-            ),
+            content: Text('Failed to upload $mediaType. Please try again.'),
             backgroundColor: Colors.red,
           ),
         );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error uploading $mediaType: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isUploadingMedia = false;
+        });
       }
     }
   }
@@ -65,31 +206,14 @@ class _ChatScreenState extends State<ChatScreen> {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: theme.colorScheme.surface,
+        automaticallyImplyLeading: false,
         elevation: 0.3,
-        leading: IconButton(
-          onPressed: () => Navigator.pop(context),
-          icon: Icon(Icons.arrow_back, color: theme.colorScheme.onSurface),
-        ),
         title: Row(
           children: [
-            CircleAvatar(
-              radius: 18,
-              backgroundColor: theme.colorScheme.primary.withOpacity(0.15),
-              backgroundImage: widget.contact.profilePic != null
-                  ? NetworkImage(widget.contact.profilePic!)
-                  : null,
-              child: widget.contact.profilePic == null
-                  ? Text(
-                      widget.contact.name.isNotEmpty
-                          ? widget.contact.name[0].toUpperCase()
-                          : 'C',
-                      style: TextStyle(
-                        color: theme.colorScheme.primary,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 16,
-                      ),
-                    )
-                  : null,
+            SmallProfilePicture(
+              imageUrl: widget.contact.profilePic,
+              name: widget.contact.name,
+              size: 36,
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -150,7 +274,7 @@ class _ChatScreenState extends State<ChatScreen> {
       body: Consumer<ChatProvider>(
         builder: (context, chatProvider, child) {
           if (chatProvider.isLoading) {
-            return const Center(child: CircularProgressIndicator());
+            return const MessageSkeleton();
           }
 
           return Column(
@@ -192,81 +316,15 @@ class _ChatScreenState extends State<ChatScreen> {
                           ],
                         ),
                       )
-                    : ListView.builder(
+                    : ListView(
+                        controller: _scrollController,
+                        reverse: true,
                         padding: const EdgeInsets.all(16),
-                        itemCount: chatProvider.messages.length,
-                        itemBuilder: (context, index) {
-                          final message = chatProvider.messages[index];
-                          final isMe =
-                              message.senderId == chatProvider.currentUserId;
-
-                          return Align(
-                            alignment: isMe
-                                ? Alignment.centerRight
-                                : Alignment.centerLeft,
-                            child: Container(
-                              margin: const EdgeInsets.symmetric(vertical: 4),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 10,
-                              ),
-                              decoration: BoxDecoration(
-                                color: isMe
-                                    ? theme.colorScheme.primary
-                                    : theme.colorScheme.surfaceVariant,
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              constraints: BoxConstraints(
-                                maxWidth:
-                                    MediaQuery.of(context).size.width * 0.75,
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    message.message,
-                                    style: TextStyle(
-                                      color: isMe
-                                          ? Colors.white
-                                          : theme.colorScheme.onSurfaceVariant,
-                                      fontSize: 16,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        _formatTime(message.timestamp),
-                                        style: TextStyle(
-                                          color: isMe
-                                              ? Colors.white.withOpacity(0.7)
-                                              : theme
-                                                    .colorScheme
-                                                    .onSurfaceVariant
-                                                    .withOpacity(0.6),
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                      if (isMe) ...[
-                                        const SizedBox(width: 4),
-                                        Icon(
-                                          message.isSeen
-                                              ? Icons.done_all
-                                              : Icons.done,
-                                          size: 16,
-                                          color: message.isSeen
-                                              ? Colors.blue
-                                              : Colors.white.withOpacity(0.7),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
+                        children: _buildChatItems(
+                          chatProvider.messages,
+                          chatProvider.currentUserId,
+                          theme,
+                        ),
                       ),
               ),
 
@@ -284,13 +342,22 @@ class _ChatScreenState extends State<ChatScreen> {
                 child: Row(
                   children: [
                     IconButton(
-                      onPressed: () {
-                        // TODO: Add attachment functionality
-                      },
-                      icon: Icon(
-                        Icons.attach_file,
-                        color: theme.colorScheme.onSurface.withOpacity(0.6),
-                      ),
+                      onPressed: _isUploadingMedia ? null : _showMediaPicker,
+                      icon: _isUploadingMedia
+                          ? SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: theme.colorScheme.primary,
+                              ),
+                            )
+                          : Icon(
+                              Icons.attach_file,
+                              color: theme.colorScheme.onSurface.withOpacity(
+                                0.6,
+                              ),
+                            ),
                     ),
                     Expanded(
                       child: TextField(
@@ -322,17 +389,8 @@ class _ChatScreenState extends State<ChatScreen> {
                         shape: BoxShape.circle,
                       ),
                       child: IconButton(
-                        onPressed: chatProvider.isSending ? null : _sendMessage,
-                        icon: chatProvider.isSending
-                            ? SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Icon(Icons.send, color: Colors.white),
+                        onPressed: _sendMessage,
+                        icon: const Icon(Icons.send, color: Colors.white),
                       ),
                     ),
                   ],
@@ -345,17 +403,107 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  String _formatTime(DateTime dateTime) {
+  String _formatDateHeader(DateTime dateTime) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
     final messageDate = DateTime(dateTime.year, dateTime.month, dateTime.day);
 
     if (messageDate == today) {
-      // Today - show time
-      return '${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
+      return 'Today';
+    } else if (messageDate == yesterday) {
+      return 'Yesterday';
+    } else if (now.difference(messageDate).inDays < 7) {
+      // This week - show day name
+      final weekdays = [
+        'Monday',
+        'Tuesday',
+        'Wednesday',
+        'Thursday',
+        'Friday',
+        'Saturday',
+        'Sunday',
+      ];
+      return weekdays[messageDate.weekday - 1];
     } else {
-      // Other day - show date
+      // Older - show date
       return '${dateTime.day}/${dateTime.month}/${dateTime.year}';
     }
+  }
+
+  List<Widget> _buildChatItems(
+    List<MessageModel> messages,
+    String currentUserId,
+    ThemeData theme,
+  ) {
+    if (messages.isEmpty) return [];
+
+    List<Widget> items = [];
+
+    // ✅ Sort messages by timestamp (oldest first)
+    final sortedMessages = List<MessageModel>.from(messages)
+      ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+
+    // ✅ Group messages by date (same day = same key)
+    Map<String, List<MessageModel>> messagesByDate = {};
+    for (final message in sortedMessages) {
+      final dateKey = DateTime(
+        message.timestamp.year,
+        message.timestamp.month,
+        message.timestamp.day,
+      ).toIso8601String();
+
+      messagesByDate.putIfAbsent(dateKey, () => []);
+      messagesByDate[dateKey]!.add(message);
+    }
+
+    // ✅ Sort date groups (oldest first)
+    final sortedDates = messagesByDate.keys.toList()
+      ..sort((a, b) => DateTime.parse(a).compareTo(DateTime.parse(b)));
+
+    // ✅ Build widgets for each date group
+    for (final dateKey in sortedDates) {
+      final messagesForDate = messagesByDate[dateKey]!;
+
+      // Add date separator first
+      items.add(
+        _buildDateSeparator(
+          _formatDateHeader(messagesForDate.first.timestamp),
+          theme,
+        ),
+      );
+
+      // Add all messages for that date (oldest first)
+      for (final message in messagesForDate) {
+        final isMe = message.senderId == currentUserId;
+        items.add(ChatBubble(message: message, isMe: isMe));
+      }
+    }
+
+    // ✅ Since ListView(reverse: true) shows bottom-up, reverse the list here
+    return items.reversed.toList();
+  }
+
+  Widget _buildDateSeparator(String dateText, ThemeData theme) {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 16),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceVariant.withOpacity(0.8),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(
+            dateText,
+            style: TextStyle(
+              color: theme.colorScheme.onSurfaceVariant,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

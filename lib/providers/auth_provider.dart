@@ -1,9 +1,12 @@
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:image_picker/image_picker.dart';
 import '../models/user_model.dart';
 import '../models/contact_model.dart';
 import '../services/auth_service.dart';
+import '../services/image_upload_service.dart';
+import '../utils/fcm.dart';
 
 enum AuthState {
   unknown,
@@ -17,12 +20,15 @@ class AuthProvider with ChangeNotifier {
   UserModel? _user;
   bool _isLoading = false;
   bool _isInitializing = true; // Separate flag for initial auth state check
+  bool _isUploadingProfilePic =
+      false; // Separate loading state for profile picture
   String? _errorMessage;
   AuthState _authState = AuthState.unknown;
 
   UserModel? get user => _user;
   bool get isLoading => _isLoading;
   bool get isInitializing => _isInitializing;
+  bool get isUploadingProfilePic => _isUploadingProfilePic;
   String? get errorMessage => _errorMessage;
   AuthState get authState => _authState;
   bool get isAuthenticated => _authState == AuthState.authenticated;
@@ -134,6 +140,7 @@ class AuthProvider with ChangeNotifier {
         _user = newUser;
         _authState = AuthState.authenticated;
         _clearError();
+        await FCMService().saveDeviceToken();
         return true;
       } else {
         _setError('Failed to create user account');
@@ -159,6 +166,7 @@ class AuthProvider with ChangeNotifier {
         _user = loggedUser;
         _authState = AuthState.authenticated;
         _clearError();
+        await FCMService().saveDeviceToken();
         return true;
       } else {
         _setError('Failed to login. Please check your credentials.');
@@ -231,7 +239,11 @@ class AuthProvider with ChangeNotifier {
       );
 
       if (updatedUser != null) {
-        _user = updatedUser;
+        // Defensive programming: ensure contacts are preserved
+        final currentContacts = _user?.contacts ?? [];
+        _user = updatedUser.contacts.isEmpty && currentContacts.isNotEmpty
+            ? updatedUser.copyWith(contacts: currentContacts)
+            : updatedUser;
         _clearError();
         return true;
       } else {
@@ -246,6 +258,56 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
+  /// Upload and update profile picture
+  Future<bool> updateProfilePicture({
+    ImageSource source = ImageSource.gallery,
+  }) async {
+    _isUploadingProfilePic = true;
+    _clearError();
+    notifyListeners();
+
+    try {
+      // Upload image to your backend server
+      final imageUrl = await ImageUploadService.uploadProfilePicture(
+        source: source,
+      );
+
+      if (imageUrl == null) {
+        _setError('Failed to upload image. Please try again.');
+        return false;
+      }
+
+      // Update user profile with new image URL without triggering global loading
+      final updatedUser = await _authService.updateUserProfile(
+        profilePic: imageUrl,
+      );
+
+      if (updatedUser != null) {
+        // Defensive programming: ensure contacts are preserved
+        final currentContacts = _user?.contacts ?? [];
+        _user = updatedUser.contacts.isEmpty && currentContacts.isNotEmpty
+            ? updatedUser.copyWith(contacts: currentContacts)
+            : updatedUser;
+        _clearError();
+        return true;
+      } else {
+        _setError('Failed to update profile');
+        return false;
+      }
+    } catch (e) {
+      _setError('Error updating profile picture: $e');
+      return false;
+    } finally {
+      _isUploadingProfilePic = false;
+      notifyListeners();
+    }
+  }
+
+  /// Remove profile picture
+  Future<bool> removeProfilePicture() async {
+    return await updateUserProfile(profilePic: null);
+  }
+
   void clearError() {
     _clearError();
   }
@@ -258,6 +320,7 @@ class AuthProvider with ChangeNotifier {
   void _setError(String error) {
     _errorMessage = error;
     _isLoading = false;
+    _isUploadingProfilePic = false; // Reset upload state on error
     notifyListeners();
   }
 
@@ -328,9 +391,6 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
-  /// ----------------------------
-  /// 🔹 Search Users
-  /// ----------------------------
   Future<List<UserModel>> searchUsers(String query) async {
     try {
       return await _authService.searchUsers(query);

@@ -223,6 +223,7 @@ class AuthService {
         bio: bio ?? currentUserData.bio,
         isOnline: currentUserData.isOnline,
         lastSeen: currentUserData.lastSeen,
+        contacts: currentUserData.contacts, // 🔹 Preserve contacts array
       );
 
       // Update in Firestore
@@ -387,7 +388,7 @@ class AuthService {
 
       // Add email search results
       for (final doc in emailQuery.docs) {
-        final userData = doc.data() as Map<String, dynamic>;
+        final userData = doc.data();
         if (userData['uid'] != currentUser.uid &&
             !addedUids.contains(userData['uid'])) {
           users.add(UserModel.fromMap(userData));

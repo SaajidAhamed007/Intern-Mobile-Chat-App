@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/auth_provider.dart';
+import 'home_screen.dart'; // after login success
+import 'login_screen.dart'; // for users authenticated but no profile
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -11,6 +15,7 @@ class _SplashScreenState extends State<SplashScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _fadeAnimation;
+  late Animation<double> _scaleAnimation;
 
   @override
   void initState() {
@@ -26,7 +31,51 @@ class _SplashScreenState extends State<SplashScreen>
       curve: Curves.easeInOut,
     );
 
+    _scaleAnimation = Tween<double>(
+      begin: 0.8,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.elasticOut));
+
     _controller.forward();
+
+    // Delay a bit to let animation play before checking auth state
+    Future.delayed(const Duration(seconds: 2), _checkAuthState);
+  }
+
+  Future<void> _checkAuthState() async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+
+    // Wait until initialization is complete
+    while (authProvider.isInitializing) {
+      await Future.delayed(const Duration(milliseconds: 100));
+      if (!mounted) return;
+    }
+
+    // Add a small additional delay to ensure state is fully settled
+    await Future.delayed(const Duration(milliseconds: 500));
+
+    if (!mounted) return;
+
+    // Navigate based on AuthState
+    switch (authProvider.authState) {
+      case AuthState.authenticated:
+        print('🟢 User is authenticated, navigating to ChatListScreen');
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const ChatListScreen()),
+        );
+        break;
+
+      case AuthState.unauthenticated:
+      case AuthState.unknown:
+      case AuthState.authenticatedWithoutProfile:
+        print('🔴 User is not authenticated, navigating to LoginScreen');
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
+        );
+        break;
+    }
   }
 
   @override
@@ -37,6 +86,8 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   Widget build(BuildContext context) {
+    final authProvider = Provider.of<AuthProvider>(context);
+
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
@@ -52,30 +103,31 @@ class _SplashScreenState extends State<SplashScreen>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // App Logo
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.white.withOpacity(0.2),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black26,
-                        blurRadius: 10,
-                        offset: Offset(0, 5),
-                      ),
-                    ],
-                  ),
-                  child: const Icon(
-                    Icons.chat_bubble_outline_rounded,
-                    size: 80,
-                    color: Colors.white,
+                // Logo animation
+                ScaleTransition(
+                  scale: _scaleAnimation,
+                  child: Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withOpacity(0.2),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Colors.black26,
+                          blurRadius: 10,
+                          offset: Offset(0, 5),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.chat_bubble_outline_rounded,
+                      size: 80,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 30),
-
-                // App Name
-                Text(
+                const Text(
                   'Hasa',
                   style: TextStyle(
                     fontSize: 48,
@@ -91,10 +143,7 @@ class _SplashScreenState extends State<SplashScreen>
                     ],
                   ),
                 ),
-
                 const SizedBox(height: 10),
-
-                // Tagline
                 Text(
                   'Connect. Chat. Share.',
                   style: TextStyle(
@@ -104,10 +153,8 @@ class _SplashScreenState extends State<SplashScreen>
                     fontWeight: FontWeight.w300,
                   ),
                 ),
-
                 const SizedBox(height: 50),
-
-                // Loading indicator with text
+                // Progress indicator
                 Column(
                   children: [
                     const CircularProgressIndicator(
@@ -116,12 +163,15 @@ class _SplashScreenState extends State<SplashScreen>
                     ),
                     const SizedBox(height: 20),
                     Text(
-                      'Initializing...',
+                      authProvider.isInitializing
+                          ? 'Initializing Firebase...'
+                          : 'Loading user session...',
                       style: TextStyle(
                         color: Colors.white.withOpacity(0.8),
                         fontSize: 14,
                         letterSpacing: 1.0,
                       ),
+                      textAlign: TextAlign.center,
                     ),
                   ],
                 ),

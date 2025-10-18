@@ -1,5 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 import '../models/message_model.dart';
 
 class ChatService {
@@ -8,146 +11,112 @@ class ChatService {
 
   String get currentUserId => _auth.currentUser?.uid ?? '';
 
-  /// Generate chat room ID for two users (consistent regardless of order)
   String getChatRoomId(String userId1, String userId2) {
     List<String> userIds = [userId1, userId2];
-    userIds.sort(); // Ensure consistent order
+    userIds.sort();
     return '${userIds[0]}_${userIds[1]}';
   }
 
-  /// Send a message to a chat room
-  Future<bool> sendMessage({
-    required String receiverId,
-    required String message,
-    String type = 'text',
-  }) async {
-    try {
-      final senderId = currentUserId;
-      if (senderId.isEmpty) return false;
+Future<void> sendPushNotification(String fcmToken, String title, String body) async {
+  final url = Uri.parse("http://10.166.122.43:3000/send-notification"); // your Node.js server URL
+  final payload = {
+    'fcmToken': fcmToken,
+    'title': title,
+    'body': body,
+  };
 
-      final chatRoomId = getChatRoomId(senderId, receiverId);
-      final messageId = _firestore
-          .collection('chats')
-          .doc(chatRoomId)
-          .collection('messages')
-          .doc()
-          .id;
+  print("📤 Sending notification to server: $payload");
 
-      final messageModel = MessageModel(
-        messageId: messageId,
-        senderId: senderId,
-        receiverId: receiverId,
-        message: message,
-        type: type,
-        timestamp: DateTime.now(),
-        isSeen: false,
-      );
+  try {
+    final response = await http.post(
+      url,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(payload),
+    );
 
-      // Create or update chat room document
-      await _firestore.collection('chats').doc(chatRoomId).set({
-        'chatRoomId': chatRoomId,
-        'participants': [senderId, receiverId],
-        'lastMessage': message,
-        'lastMessageTime': messageModel.timestamp.toIso8601String(),
-        'lastMessageSenderId': senderId,
-        'createdAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-
-      // Add message to messages subcollection
-      await _firestore
-          .collection('chats')
-          .doc(chatRoomId)
-          .collection('messages')
-          .doc(messageId)
-          .set(messageModel.toMap());
-
-      // Send notification to receiver
-      await _sendMessageNotification(receiverId, message, senderId);
-
-      return true;
-    } catch (e) {
-      print('Error sending message: $e');
-      return false;
-    }
+    print("📥 Response from server: ${response.statusCode} - ${response.body}");
+  } catch (e) {
+    print("❌ Error while sending notification: $e");
   }
+}
 
-  /// Send notification for new message
-  Future<void> _sendMessageNotification(
-    String receiverId,
-    String message,
-    String senderId,
-  ) async {
-    try {
-      // Get sender's information
-      final senderDoc = await _firestore
-          .collection('users')
-          .doc(senderId)
-          .get();
-      if (!senderDoc.exists) return;
-
-      final senderData = senderDoc.data() as Map<String, dynamic>;
-      final senderName = senderData['name'] as String? ?? 'Someone';
-
-      print(
-        '📧 Attempting to send notification to $receiverId from $senderName',
-      );
-
-      // Get receiver's FCM token from Firestore
-      final receiverDoc = await _firestore
-          .collection('users')
-          .doc(receiverId)
-          .get();
-
-      if (!receiverDoc.exists) {
-        print('❌ Receiver user not found');
-        return;
-      }
-
-      final receiverData = receiverDoc.data() as Map<String, dynamic>;
-      final receiverToken = receiverData['fcmToken'] as String?;
-
-      if (receiverToken == null) {
-        print('❌ Receiver FCM token not found');
-        return;
-      }
-
-      print('✅ Found receiver FCM token: ${receiverToken.substring(0, 20)}...');
-
-      // For now, save notification to Firestore for Cloud Functions to process
-      // In the future, you'd use Cloud Functions to send actual FCM messages
-      await _firestore.collection('notifications').add({
-        'receiverUserId': receiverId,
-        'senderUserId': senderId,
-        'senderName': senderName,
-        'title': 'New message from $senderName',
-        'body': message,
-        'data': {
-          'chatUserId': senderId,
-          'senderName': senderName,
-          'message': message,
-          'messageType': 'chat_message',
-          'timestamp': DateTime.now().toIso8601String(),
-        },
-        'fcmToken': receiverToken,
-        'createdAt': FieldValue.serverTimestamp(),
-        'status': 'pending', // pending, sent, failed
-      });
-
-      print('✅ Notification queued in Firestore for $senderName -> receiver');
-
-      // Also show a local notification if the receiver is the current user
-      // This is for testing when using the same device
-      if (receiverId == _auth.currentUser?.uid) {
-        print('🔔 Showing local notification for same-device testing');
-        // This won't work as intended because it's the same user, but useful for debugging
-      }
-    } catch (e) {
-      print('❌ Error sending notification: $e');
-      // Don't fail the message send if notification fails
+Future<void> sendMessage({
+  required String receiverId,
+  required String message,
+  String type = 'text',
+}) async {
+  try {
+    final senderId = currentUserId;
+    if (senderId.isEmpty) {
+      debugPrint("❌ Sender ID empty");
+      return;
     }
-  }
 
-  /// Get messages stream for a chat room
+    final chatRoomId = getChatRoomId(senderId, receiverId);
+    final messageId = _firestore
+        .collection('chats')
+        .doc(chatRoomId)
+        .collection('messages')
+        .doc()
+        .id;
+
+    // 🔹 Firestore message data
+    final messageData = {
+      'messageId': messageId,
+      'senderId': senderId,
+      'receiverId': receiverId,
+      'message': message,
+      'type': type,
+      'timestamp': FieldValue.serverTimestamp(),
+      'isSeen': false,
+      'status': 'sent',
+    };
+
+    // 🔹 Create/update chat room
+    await _firestore.collection('chats').doc(chatRoomId).set({
+      'chatRoomId': chatRoomId,
+      'participants': [senderId, receiverId],
+      'lastMessage': message,
+      'lastMessageSenderId': senderId,
+      'lastMessageTime': FieldValue.serverTimestamp(),
+      'createdAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    // 🔹 Add message to Firestore
+    await _firestore
+        .collection('chats')
+        .doc(chatRoomId)
+        .collection('messages')
+        .doc(messageId)
+        .set(messageData);
+
+    // 🔹 Get sender name
+    final senderDoc = await _firestore.collection('users').doc(senderId).get();
+    final senderName = senderDoc.data()?['name'] ?? 'Someone';
+
+    // 🔹 Get receiver’s FCM token
+    final receiverDoc =
+        await _firestore.collection('users').doc(receiverId).get();
+    final fcmToken = receiverDoc.data()?['fcmToken'];
+
+    if (fcmToken == null || fcmToken.isEmpty) {
+      debugPrint("⚠️ No FCM token found for receiver");
+      return;
+    }
+
+    // 🔹 Send notification: show sender name + message
+    await sendPushNotification(
+      fcmToken,
+      "$senderName 💬", // ✅ title shows sender name
+      message,           // ✅ body shows the message text
+    );
+
+  } catch (e) {
+    debugPrint('❌ Error sending message: $e');
+  }
+}
+
+  /// ✅ Stream messages in ascending order (oldest → newest)
   Stream<List<MessageModel>> getMessagesStream(String otherUserId) {
     final chatRoomId = getChatRoomId(currentUserId, otherUserId);
 
@@ -155,21 +124,20 @@ class ChatService {
         .collection('chats')
         .doc(chatRoomId)
         .collection('messages')
-        .orderBy('timestamp', descending: false)
+        .orderBy('timestamp', descending: false) // oldest first like WhatsApp
         .snapshots()
-        .map((snapshot) {
-          return snapshot.docs.map((doc) {
-            return MessageModel.fromMap(doc.data());
-          }).toList();
-        });
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => MessageModel.fromMap(doc.data()))
+              .toList(),
+        );
   }
 
-  /// Mark messages as seen
+  /// ✅ Mark messages as seen
   Future<void> markMessagesAsSeen(String otherUserId) async {
     try {
       final chatRoomId = getChatRoomId(currentUserId, otherUserId);
 
-      // Get unread messages sent by the other user
       final unreadMessages = await _firestore
           .collection('chats')
           .doc(chatRoomId)
@@ -178,45 +146,145 @@ class ChatService {
           .where('isSeen', isEqualTo: false)
           .get();
 
-      // Mark each message as seen
-      WriteBatch batch = _firestore.batch();
+      final batch = _firestore.batch();
       for (var doc in unreadMessages.docs) {
-        batch.update(doc.reference, {'isSeen': true});
+        batch.update(doc.reference, {'isSeen': true, 'status': 'seen'});
       }
-
       await batch.commit();
     } catch (e) {
-      print('Error marking messages as seen: $e');
+      debugPrint('Error marking messages as seen: $e');
     }
   }
 
-  /// Get all chat rooms for current user
+  /// ✅ Stream chat list (sorted by last message time)
   Stream<List<Map<String, dynamic>>> getChatRoomsStream() {
     return _firestore
         .collection('chats')
         .where('participants', arrayContains: currentUserId)
         .orderBy('lastMessageTime', descending: true)
         .snapshots()
+        .map((snapshot) => snapshot.docs.map((doc) => doc.data()).toList());
+  }
+
+  /// ✅ Fetch last message between users
+  Future<MessageModel?> getLastMessage(String otherUserId) async {
+    try {
+      final chatRoomId = getChatRoomId(currentUserId, otherUserId);
+      final querySnapshot = await _firestore
+          .collection('chats')
+          .doc(chatRoomId)
+          .collection('messages')
+          .orderBy('timestamp', descending: true)
+          .limit(1)
+          .get();
+
+      if (querySnapshot.docs.isNotEmpty) {
+        return MessageModel.fromMap(querySnapshot.docs.first.data());
+      }
+      return null;
+    } catch (e) {
+      debugPrint('Error getting last message: $e');
+      return null;
+    }
+  }
+
+  /// ✅ Get unread message count
+  Future<int> getUnreadCount(String otherUserId) async {
+    try {
+      final chatRoomId = getChatRoomId(currentUserId, otherUserId);
+      final snapshot = await _firestore
+          .collection('chats')
+          .doc(chatRoomId)
+          .collection('messages')
+          .where('senderId', isEqualTo: otherUserId)
+          .where('isSeen', isEqualTo: false)
+          .get();
+
+      return snapshot.docs.length;
+    } catch (e) {
+      debugPrint('Error getting unread count: $e');
+      return 0;
+    }
+  }
+
+  /// ✅ Real-time summary (last message + unread count)
+  Stream<Map<String, dynamic>> getChatSummaryStream(String otherUserId) {
+    final chatRoomId = getChatRoomId(currentUserId, otherUserId);
+
+    return _firestore
+        .collection('chats')
+        .doc(chatRoomId)
+        .collection('messages')
+        .orderBy('timestamp', descending: true)
+        .limit(50) // Get more messages to properly calculate unread count
+        .snapshots()
         .map((snapshot) {
-          return snapshot.docs.map((doc) => doc.data()).toList();
+          try {
+            if (snapshot.docs.isEmpty) {
+              return {'lastMessage': null, 'unreadCount': 0};
+            }
+
+            // Get the latest message
+            final lastMessageData = snapshot.docs.first.data();
+            final lastMessage = MessageModel.fromMap(lastMessageData);
+
+            // Update the last message status based on isSeen field for sent messages
+            MessageModel updatedLastMessage = lastMessage;
+            if (lastMessage.senderId == currentUserId) {
+              // For our sent messages, update status based on isSeen
+              if (lastMessage.isSeen) {
+                updatedLastMessage = lastMessage.copyWith(status: 'seen');
+              } else {
+                updatedLastMessage = lastMessage.copyWith(status: 'delivered');
+              }
+            }
+
+            // Calculate unread count from the snapshot (messages from other user that are not seen)
+            int unreadCount = 0;
+            for (final doc in snapshot.docs) {
+              try {
+                final data = doc.data();
+                if (data['senderId'] == otherUserId &&
+                    (data['isSeen'] == false || data['isSeen'] == null)) {
+                  unreadCount++;
+                }
+              } catch (e) {
+                debugPrint('Error processing message for unread count: $e');
+              }
+            }
+
+            debugPrint(
+              'Chat summary for $otherUserId: lastMessage=${updatedLastMessage.message}, unreadCount=$unreadCount',
+            );
+
+            return {
+              'lastMessage': updatedLastMessage,
+              'unreadCount': unreadCount,
+            };
+          } catch (e) {
+            debugPrint('Error in getChatSummaryStream: $e');
+            return {'lastMessage': null, 'unreadCount': 0};
+          }
+        })
+        .handleError((error) {
+          debugPrint('Error in chat summary stream: $error');
+          return {'lastMessage': null, 'unreadCount': 0};
         });
   }
 
-  /// Delete a message
+  /// ✅ Delete a message
   Future<bool> deleteMessage(String otherUserId, String messageId) async {
     try {
       final chatRoomId = getChatRoomId(currentUserId, otherUserId);
-
       await _firestore
           .collection('chats')
           .doc(chatRoomId)
           .collection('messages')
           .doc(messageId)
           .delete();
-
       return true;
     } catch (e) {
-      print('Error deleting message: $e');
+      debugPrint('Error deleting message: $e');
       return false;
     }
   }

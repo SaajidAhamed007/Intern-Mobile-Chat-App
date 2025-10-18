@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:image_picker/image_picker.dart';
 import '../providers/auth_provider.dart' as auth_provider;
-import '../providers/notification_provider.dart';
-import '../services/notification_listener_service.dart';
+import '../providers/theme_provider.dart';
+import '../widgets/profile_picture.dart';
+import '../widgets/image_source_dialog.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -14,14 +16,143 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   final TextEditingController _bioController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
-  bool _isEditingBio = false;
   bool _isEditingPhone = false;
+  bool _notificationsEnabled = true; // Default to enabled
 
   @override
   void dispose() {
     _bioController.dispose();
     _phoneController.dispose();
     super.dispose();
+  }
+
+  Future<void> _showEditBioDialog() async {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final authProvider = Provider.of<auth_provider.AuthProvider>(
+      context,
+      listen: false,
+    );
+    final user = authProvider.user;
+
+    if (user == null) return;
+
+    // Set initial text
+    _bioController.text = user.bio ?? '';
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: colorScheme.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: colorScheme.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      Icons.edit_note,
+                      color: colorScheme.primary,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Edit About',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: colorScheme.onSurface,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+
+              // Text field
+              TextField(
+                controller: _bioController,
+                maxLines: 4,
+                maxLength: 150,
+                autofocus: true,
+                style: TextStyle(color: colorScheme.onSurface, fontSize: 16),
+                decoration: InputDecoration(
+                  hintText: 'Add a few words about yourself...',
+                  hintStyle: TextStyle(
+                    color: colorScheme.onSurface.withOpacity(0.5),
+                  ),
+                  filled: true,
+                  fillColor: colorScheme.surfaceVariant.withOpacity(0.5),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(
+                      color: colorScheme.primary,
+                      width: 2,
+                    ),
+                  ),
+                  contentPadding: const EdgeInsets.all(16),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Buttons
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: Text(
+                      'Cancel',
+                      style: TextStyle(
+                        color: colorScheme.onSurface.withOpacity(0.6),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: () => Navigator.of(context).pop(true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: colorScheme.primary,
+                      foregroundColor: colorScheme.onPrimary,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 12,
+                      ),
+                    ),
+                    child: const Text(
+                      'Save',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (result == true) {
+      await _updateBio();
+    }
   }
 
   Future<void> _updateBio() async {
@@ -35,9 +166,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
 
     if (success && mounted) {
-      setState(() {
-        _isEditingBio = false;
-      });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Bio updated successfully!'),
@@ -88,13 +216,48 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  Future<void> _updateProfilePicture() async {
+    // Show image source selection
+    await ImageSourceBottomSheet.show(
+      context,
+      onSourceSelected: (ImageSource source) async {
+        final authProvider = Provider.of<auth_provider.AuthProvider>(
+          context,
+          listen: false,
+        );
+
+        final success = await authProvider.updateProfilePicture(source: source);
+
+        if (mounted) {
+          if (success) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Profile picture updated successfully!'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  authProvider.errorMessage ??
+                      'Failed to update profile picture',
+                ),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        }
+      },
+    );
+  }
+
   Future<void> _logout() async {
     final authProvider = Provider.of<auth_provider.AuthProvider>(
       context,
       listen: false,
     );
 
-    // Show confirmation dialog
     final shouldLogout = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -122,564 +285,764 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     return Scaffold(
+      backgroundColor: colorScheme.surface,
       appBar: AppBar(
-        title: const Text('Profile'),
-        backgroundColor: Colors.deepPurple,
-        foregroundColor: Colors.white,
+        backgroundColor: colorScheme.primary,
+        foregroundColor: colorScheme.onPrimary,
+        elevation: 0,
+        title: Text(
+          'Profile',
+          style: TextStyle(
+            fontWeight: FontWeight.w500,
+            fontSize: 20,
+            color: colorScheme.onPrimary,
+          ),
+        ),
+        actions: [
+          // Share Profile
+          IconButton(
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: const Text('Profile share feature coming soon!'),
+                  backgroundColor: colorScheme.inverseSurface,
+                ),
+              );
+            },
+            icon: Icon(Icons.share, color: colorScheme.onPrimary),
+            tooltip: 'Share Profile',
+          ),
+        ],
       ),
       body: Consumer<auth_provider.AuthProvider>(
         builder: (context, authProvider, child) {
           final user = authProvider.user;
 
           if (user == null) {
-            return const Center(
+            return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.error, size: 64, color: Colors.red),
-                  SizedBox(height: 16),
-                  Text('No user data available'),
+                  Icon(Icons.error_outline, size: 80, color: colorScheme.error),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No user data available',
+                    style: theme.textTheme.headlineSmall?.copyWith(
+                      color: colorScheme.onSurface,
+                    ),
+                  ),
                 ],
               ),
             );
           }
 
-          // Initialize bio controller with current bio if not editing
-          if (!_isEditingBio &&
-              _bioController.text.isEmpty &&
-              user.bio != null) {
-            _bioController.text = user.bio!;
-          }
-
-          // Initialize phone controller with current phone if not editing
-          if (!_isEditingPhone &&
-              _phoneController.text.isEmpty &&
-              user.phoneNumber != null) {
-            _phoneController.text = user.phoneNumber!;
-          }
-
-          return Padding(
-            padding: const EdgeInsets.all(20.0),
+          return SingleChildScrollView(
             child: Column(
               children: [
-                // Profile Picture Section
-                Center(
-                  child: Stack(
-                    children: [
-                      CircleAvatar(
-                        radius: 60,
-                        backgroundColor: Colors.deepPurple.shade100,
-                        child:
-                            user.profilePic != null &&
-                                user.profilePic!.isNotEmpty
-                            ? ClipOval(
-                                child: Image.network(
-                                  user.profilePic!,
-                                  width: 120,
-                                  height: 120,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) {
-                                    return Icon(
-                                      Icons.person,
-                                      size: 60,
-                                      color: Colors.deepPurple.shade300,
-                                    );
-                                  },
-                                ),
-                              )
-                            : Icon(
-                                Icons.person,
-                                size: 60,
-                                color: Colors.deepPurple.shade300,
-                              ),
-                      ),
-                      Positioned(
-                        bottom: 0,
-                        right: 0,
-                        child: InkWell(
-                          onTap: () {
-                            // TODO: Pick new profile image
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'Profile picture update coming soon!',
-                                ),
-                              ),
-                            );
-                          },
-                          child: const CircleAvatar(
-                            radius: 20,
-                            backgroundColor: Colors.deepPurple,
-                            child: Icon(
-                              Icons.camera_alt,
-                              color: Colors.white,
-                              size: 20,
-                            ),
-                          ),
-                        ),
+                // Enhanced Profile Header Section with gradient
+                Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: colorScheme.primary,
+                    boxShadow: [
+                      BoxShadow(
+                        color: colorScheme.primary.withOpacity(0.25),
+                        blurRadius: 20,
+                        offset: const Offset(0, 10),
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(height: 30),
-
-                // User Information
-                ListTile(
-                  leading: const Icon(Icons.person, color: Colors.deepPurple),
-                  title: const Text('Full Name'),
-                  subtitle: Text(user.name),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.email, color: Colors.deepPurple),
-                  title: const Text('Email'),
-                  subtitle: Text(user.email),
-                ),
-
-                // Phone Number Section
-                Card(
-                  margin: const EdgeInsets.symmetric(vertical: 5),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 10),
+                      // Profile Picture and Bio Row
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
-                              'Phone Number',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.deepPurple,
+                            // Profile Picture with enhanced styling
+                            Container(
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [
+                                    colorScheme.onPrimary.withOpacity(0.2),
+                                    colorScheme.onPrimary.withOpacity(0.1),
+                                  ],
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.15),
+                                    blurRadius: 16,
+                                    offset: const Offset(0, 8),
+                                  ),
+                                  BoxShadow(
+                                    color: colorScheme.onPrimary.withOpacity(
+                                      0.1,
+                                    ),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: Container(
+                                margin: const EdgeInsets.all(3),
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: colorScheme.surface,
+                                ),
+                                child: Consumer<auth_provider.AuthProvider>(
+                                  builder: (context, authProvider, child) {
+                                    return LargeProfilePicture(
+                                      imageUrl: user.profilePic,
+                                      name: user.name,
+                                      showEditIcon: true,
+                                      onEditTap: _updateProfilePicture,
+                                      isUploading:
+                                          authProvider.isUploadingProfilePic,
+                                    );
+                                  },
+                                ),
                               ),
                             ),
-                            IconButton(
-                              icon: Icon(
-                                _isEditingPhone ? Icons.close : Icons.edit,
+                            const SizedBox(width: 20),
+                            // Bio Section with enhanced styling
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Bio',
+                                    style: TextStyle(
+                                      color: colorScheme.onPrimary.withOpacity(
+                                        0.8,
+                                      ),
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  // Bio display with popup editing
+                                  GestureDetector(
+                                    onTap: _showEditBioDialog,
+                                    child: Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: colorScheme.onPrimary
+                                            .withOpacity(0.15),
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: colorScheme.onPrimary
+                                              .withOpacity(0.25),
+                                          width: 1,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              user.bio?.isNotEmpty == true
+                                                  ? user.bio!
+                                                  : 'Add a few words about yourself',
+                                              style: TextStyle(
+                                                color:
+                                                    user.bio?.isNotEmpty == true
+                                                    ? colorScheme.onPrimary
+                                                    : colorScheme.onPrimary
+                                                          .withOpacity(0.7),
+                                                fontSize: 14,
+                                                fontStyle:
+                                                    user.bio?.isNotEmpty == true
+                                                    ? FontStyle.normal
+                                                    : FontStyle.italic,
+                                              ),
+                                            ),
+                                          ),
+                                          Icon(
+                                            Icons.edit,
+                                            color: colorScheme.onPrimary
+                                                .withOpacity(0.7),
+                                            size: 16,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                              onPressed: () {
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                    ],
+                  ),
+                ),
+
+                // Profile Content with enhanced cards
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      // User Info Card
+                      Container(
+                        decoration: BoxDecoration(
+                          color: colorScheme.surface,
+                          borderRadius: BorderRadius.circular(20),
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              colorScheme.surface,
+                              colorScheme.surfaceVariant.withOpacity(0.3),
+                            ],
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: colorScheme.shadow.withOpacity(0.12),
+                              blurRadius: 16,
+                              offset: const Offset(0, 6),
+                            ),
+                            BoxShadow(
+                              color: colorScheme.primary.withOpacity(0.05),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                          border: Border.all(
+                            color: colorScheme.outline.withOpacity(0.08),
+                            width: 1,
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            // Name Section
+                            _buildProfileItem(
+                              context: context,
+                              icon: Icons.person,
+                              title: 'Name',
+                              subtitle: user.name,
+                              showDivider: true,
+                            ),
+
+                            // Phone Section
+                            _buildEditableProfileItem(
+                              context: context,
+                              icon: Icons.phone,
+                              title: 'Phone',
+                              value: user.phoneNumber,
+                              placeholder: 'Add phone number',
+                              isEditing: _isEditingPhone,
+                              controller: _phoneController,
+                              maxLines: 1,
+                              keyboardType: TextInputType.phone,
+                              onEdit: () {
                                 setState(() {
+                                  _isEditingPhone = !_isEditingPhone;
                                   if (_isEditingPhone) {
-                                    // Cancel editing
                                     _phoneController.text =
                                         user.phoneNumber ?? '';
-                                    _isEditingPhone = false;
-                                  } else {
-                                    // Start editing
-                                    _phoneController.text =
-                                        user.phoneNumber ?? '';
-                                    _isEditingPhone = true;
                                   }
                                 });
+                              },
+                              onSave: _updatePhone,
+                              onCancel: () {
+                                setState(() {
+                                  _isEditingPhone = false;
+                                  _phoneController.text =
+                                      user.phoneNumber ?? '';
+                                });
+                              },
+                              isLoading: authProvider.isLoading,
+                              showDivider: true,
+                            ),
+
+                            // Email Section
+                            _buildProfileItem(
+                              context: context,
+                              icon: Icons.email,
+                              title: 'Email',
+                              subtitle: user.email,
+                              showDivider: false,
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 24),
+
+                      // Settings Card
+                      Container(
+                        decoration: BoxDecoration(
+                          color: colorScheme.surface,
+                          borderRadius: BorderRadius.circular(20),
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              colorScheme.surface,
+                              colorScheme.surfaceVariant.withOpacity(0.3),
+                            ],
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: colorScheme.shadow.withOpacity(0.12),
+                              blurRadius: 16,
+                              offset: const Offset(0, 6),
+                            ),
+                            BoxShadow(
+                              color: colorScheme.primary.withOpacity(0.05),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                          border: Border.all(
+                            color: colorScheme.outline.withOpacity(0.08),
+                            width: 1,
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Settings Header
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                              child: Text(
+                                'Preferences',
+                                style: TextStyle(
+                                  color: colorScheme.onSurface,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 0.3,
+                                ),
+                              ),
+                            ),
+
+                            // Notification Toggle
+                            _buildSettingsItem(
+                              context: context,
+                              icon: _notificationsEnabled
+                                  ? Icons.notifications_active
+                                  : Icons.notifications_off,
+                              title: 'Notifications',
+                              subtitle: _notificationsEnabled
+                                  ? 'Enabled'
+                                  : 'Disabled',
+                              trailing: Switch(
+                                value: _notificationsEnabled,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _notificationsEnabled = value;
+                                  });
+                                  // TODO: Save notification preference to backend/local storage
+                                },
+                                activeColor: colorScheme.primary,
+                              ),
+                              showDivider: true,
+                            ),
+
+                            // Dark Mode Toggle
+                            Consumer<ThemeProvider>(
+                              builder: (context, themeProvider, child) {
+                                return _buildSettingsItem(
+                                  context: context,
+                                  icon: themeProvider.isDarkMode
+                                      ? Icons.dark_mode
+                                      : Icons.light_mode,
+                                  title: 'Dark Mode',
+                                  subtitle: themeProvider.themeModeDescription,
+                                  trailing: Switch(
+                                    value: themeProvider.isDarkMode,
+                                    onChanged: (value) =>
+                                        themeProvider.toggleTheme(),
+                                    activeColor: colorScheme.primary,
+                                  ),
+                                  showDivider: false,
+                                );
                               },
                             ),
                           ],
                         ),
-                        const SizedBox(height: 10),
-                        if (_isEditingPhone)
-                          Column(
-                            children: [
-                              TextFormField(
-                                controller: _phoneController,
-                                keyboardType: TextInputType.phone,
-                                decoration: const InputDecoration(
-                                  hintText: 'Enter your phone number',
-                                  prefixIcon: Icon(Icons.phone),
-                                  border: OutlineInputBorder(),
-                                ),
-                                maxLines: 1,
-                              ),
-                              const SizedBox(height: 10),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.end,
-                                children: [
-                                  TextButton(
-                                    onPressed: () {
-                                      setState(() {
-                                        _phoneController.text =
-                                            user.phoneNumber ?? '';
-                                        _isEditingPhone = false;
-                                      });
-                                    },
-                                    child: const Text('Cancel'),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  ElevatedButton(
-                                    onPressed: _updatePhone,
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.deepPurple,
-                                    ),
-                                    child: const Text(
-                                      'Save',
-                                      style: TextStyle(color: Colors.white),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          )
-                        else
-                          Text(
-                            user.phoneNumber?.isNotEmpty == true
-                                ? user.phoneNumber!
-                                : 'No phone number added. Tap edit to add one.',
-                            style: TextStyle(
-                              color: user.phoneNumber?.isNotEmpty == true
-                                  ? Colors.black87
-                                  : Colors.grey[600],
-                              fontStyle: user.phoneNumber?.isNotEmpty == true
-                                  ? FontStyle.normal
-                                  : FontStyle.italic,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
+                      ),
 
-                // Bio Section
-                Card(
-                  margin: const EdgeInsets.symmetric(vertical: 10),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              'Bio',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.deepPurple,
-                              ),
+                      const SizedBox(height: 24),
+
+                      // Logout Button with enhanced styling
+                      Container(
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(16),
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              colorScheme.error,
+                              colorScheme.error.withOpacity(0.8),
+                            ],
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: colorScheme.error.withOpacity(0.3),
+                              blurRadius: 12,
+                              offset: const Offset(0, 6),
                             ),
-                            IconButton(
-                              onPressed: authProvider.isLoading
-                                  ? null
-                                  : () {
-                                      setState(() {
-                                        if (_isEditingBio) {
-                                          // Cancel editing
-                                          _isEditingBio = false;
-                                          _bioController.text = user.bio ?? '';
-                                        } else {
-                                          // Start editing
-                                          _isEditingBio = true;
-                                          _bioController.text = user.bio ?? '';
-                                        }
-                                      });
-                                    },
-                              icon: Icon(
-                                _isEditingBio ? Icons.close : Icons.edit,
-                                color: Colors.deepPurple,
-                              ),
+                            BoxShadow(
+                              color: colorScheme.error.withOpacity(0.15),
+                              blurRadius: 20,
+                              offset: const Offset(0, 10),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 8),
-                        if (_isEditingBio) ...[
-                          TextField(
-                            controller: _bioController,
-                            maxLines: 3,
-                            maxLength: 150,
-                            decoration: const InputDecoration(
-                              hintText: 'Tell us about yourself...',
-                              border: OutlineInputBorder(),
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              TextButton(
-                                onPressed: authProvider.isLoading
-                                    ? null
-                                    : () {
-                                        setState(() {
-                                          _isEditingBio = false;
-                                          _bioController.text = user.bio ?? '';
-                                        });
-                                      },
-                                child: const Text('Cancel'),
-                              ),
-                              const SizedBox(width: 8),
-                              ElevatedButton(
-                                onPressed: authProvider.isLoading
-                                    ? null
-                                    : _updateBio,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.deepPurple,
+                        child: ElevatedButton.icon(
+                          onPressed: authProvider.isLoading ? null : _logout,
+                          icon: authProvider.isLoading
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.logout_rounded,
+                                  color: Colors.white,
+                                  size: 20,
                                 ),
-                                child: authProvider.isLoading
-                                    ? const SizedBox(
-                                        width: 16,
-                                        height: 16,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: Colors.white,
-                                        ),
-                                      )
-                                    : const Text(
-                                        'Save',
-                                        style: TextStyle(color: Colors.white),
-                                      ),
-                              ),
-                            ],
-                          ),
-                        ] else ...[
-                          Text(
-                            user.bio?.isNotEmpty == true
-                                ? user.bio!
-                                : 'No bio available. Tap edit to add one.',
+                          label: const Text(
+                            'Sign Out',
                             style: TextStyle(
-                              fontSize: 14,
-                              color: user.bio?.isNotEmpty == true
-                                  ? Colors.black87
-                                  : Colors.grey,
-                              fontStyle: user.bio?.isNotEmpty == true
-                                  ? FontStyle.normal
-                                  : FontStyle.italic,
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.5,
                             ),
                           ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                // Notification Settings Section
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.grey.withOpacity(0.1),
-                        spreadRadius: 1,
-                        blurRadius: 6,
-                        offset: const Offset(0, 3),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.transparent,
+                            shadowColor: Colors.transparent,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                        ),
                       ),
+
+                      const SizedBox(height: 32),
                     ],
                   ),
-                  child: Consumer<NotificationProvider>(
-                    builder: (context, notificationProvider, child) {
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Notification Settings',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black87,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-
-                          // Enable Notifications Toggle
-                          SwitchListTile(
-                            title: const Text('Enable Notifications'),
-                            subtitle: const Text(
-                              'Receive message notifications',
-                            ),
-                            value: notificationProvider.notificationsEnabled,
-                            onChanged: (value) {
-                              notificationProvider.setNotificationsEnabled(
-                                value,
-                              );
-                            },
-                            activeColor: Colors.deepPurple,
-                          ),
-
-                          // Sound Toggle
-                          SwitchListTile(
-                            title: const Text('Sound'),
-                            subtitle: const Text(
-                              'Play sound for notifications',
-                            ),
-                            value: notificationProvider.soundEnabled,
-                            onChanged: notificationProvider.notificationsEnabled
-                                ? (value) {
-                                    notificationProvider.setSoundEnabled(value);
-                                  }
-                                : null,
-                            activeColor: Colors.deepPurple,
-                          ),
-
-                          // Vibration Toggle
-                          SwitchListTile(
-                            title: const Text('Vibration'),
-                            subtitle: const Text('Vibrate for notifications'),
-                            value: notificationProvider.vibrationEnabled,
-                            onChanged: notificationProvider.notificationsEnabled
-                                ? (value) {
-                                    notificationProvider.setVibrationEnabled(
-                                      value,
-                                    );
-                                  }
-                                : null,
-                            activeColor: Colors.deepPurple,
-                          ),
-
-                          // Notification status
-                          if (notificationProvider.errorMessage != null)
-                            Container(
-                              margin: const EdgeInsets.only(top: 10),
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: Colors.red.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: Colors.red.withOpacity(0.3),
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(
-                                    Icons.warning,
-                                    color: Colors.red,
-                                    size: 20,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      notificationProvider.errorMessage!,
-                                      style: const TextStyle(
-                                        color: Colors.red,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-
-                          // FCM Token (for debugging)
-                          if (notificationProvider.fcmToken != null)
-                            ExpansionTile(
-                              title: const Text(
-                                'Debug Info',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.grey,
-                                ),
-                              ),
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(10),
-                                  decoration: BoxDecoration(
-                                    color: Colors.grey.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      const Text(
-                                        'FCM Token:',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      SelectableText(
-                                        notificationProvider.debugFCMToken,
-                                        style: const TextStyle(
-                                          fontSize: 10,
-                                          fontFamily: 'monospace',
-                                        ),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        'Status: ${notificationProvider.isInitialized ? "Initialized" : "Not initialized"}',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color:
-                                              notificationProvider.isInitialized
-                                              ? Colors.green
-                                              : Colors.red,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                // Debug: Check Notifications Button
-                ElevatedButton.icon(
-                  onPressed: () async {
-                    final notificationListener = NotificationListenerService();
-                    await notificationListener.checkPendingNotifications();
-                    
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Checked for pending notifications - see console'),
-                          backgroundColor: Colors.blue,
-                        ),
-                      );
-                    }
-                  },
-                  icon: const Icon(Icons.notifications_active),
-                  label: const Text('Check Notifications'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 12,
-                      horizontal: 24,
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                // Logout Button
-                ElevatedButton(
-                  onPressed: authProvider.isLoading ? null : _logout,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red,
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 15,
-                      horizontal: 50,
-                    ),
-                  ),
-                  child: authProvider.isLoading
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : const Text(
-                          'Logout',
-                          style: TextStyle(fontSize: 18, color: Colors.white),
-                        ),
                 ),
               ],
             ),
           );
         },
+      ),
+    );
+  }
+
+  // Enhanced profile item (non-editable)
+  Widget _buildProfileItem({
+    required BuildContext context,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    bool showDivider = false,
+  }) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Container(
+      color: colorScheme.surface,
+      child: Column(
+        children: [
+          ListTile(
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 14,
+            ),
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: colorScheme.primary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: colorScheme.primary, size: 22),
+            ),
+            title: Text(
+              title,
+              style: TextStyle(
+                color: colorScheme.onSurface.withOpacity(0.6),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.3,
+              ),
+            ),
+            subtitle: Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                subtitle,
+                style: TextStyle(
+                  color: colorScheme.onSurface,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ),
+          if (showDivider)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Divider(
+                height: 1,
+                thickness: 0.5,
+                color: colorScheme.outline.withOpacity(0.15),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // WhatsApp-style editable profile item
+  Widget _buildEditableProfileItem({
+    required BuildContext context,
+    required IconData icon,
+    required String title,
+    required String? value,
+    required String placeholder,
+    required bool isEditing,
+    required TextEditingController controller,
+    required VoidCallback onEdit,
+    required VoidCallback onSave,
+    required VoidCallback onCancel,
+    required bool isLoading,
+    int maxLines = 1,
+    int? maxLength,
+    TextInputType? keyboardType,
+    bool showDivider = false,
+  }) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Container(
+      color: colorScheme.surface,
+      child: Column(
+        children: [
+          if (isEditing) ...[
+            Container(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        icon,
+                        color: colorScheme.onSurface.withOpacity(0.6),
+                        size: 24,
+                      ),
+                      const SizedBox(width: 32),
+                      Expanded(
+                        child: Text(
+                          title,
+                          style: TextStyle(
+                            color: colorScheme.onSurface.withOpacity(0.6),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: controller,
+                    maxLines: maxLines,
+                    maxLength: maxLength,
+                    keyboardType: keyboardType,
+                    style: TextStyle(color: colorScheme.onSurface),
+                    decoration: InputDecoration(
+                      hintText: placeholder,
+                      hintStyle: TextStyle(
+                        color: colorScheme.onSurface.withOpacity(0.5),
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: colorScheme.outline),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: colorScheme.primary),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 12,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: isLoading ? null : onCancel,
+                        child: Text(
+                          'Cancel',
+                          style: TextStyle(
+                            color: colorScheme.onSurface.withOpacity(0.6),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      ElevatedButton(
+                        onPressed: isLoading ? null : onSave,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: colorScheme.primary,
+                          foregroundColor: colorScheme.onPrimary,
+                        ),
+                        child: isLoading
+                            ? SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: colorScheme.onPrimary,
+                                ),
+                              )
+                            : const Text('Save'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ] else ...[
+            ListTile(
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 12,
+              ),
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: colorScheme.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: colorScheme.primary, size: 22),
+              ),
+              title: Text(
+                title,
+                style: TextStyle(
+                  color: colorScheme.onSurface.withOpacity(0.6),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.3,
+                ),
+              ),
+              subtitle: Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  value?.isNotEmpty == true ? value! : placeholder,
+                  style: TextStyle(
+                    color: value?.isNotEmpty == true
+                        ? colorScheme.onSurface
+                        : colorScheme.onSurface.withOpacity(0.5),
+                    fontSize: 16,
+                    fontWeight: value?.isNotEmpty == true
+                        ? FontWeight.w500
+                        : FontWeight.w400,
+                    fontStyle: value?.isNotEmpty == true
+                        ? FontStyle.normal
+                        : FontStyle.italic,
+                  ),
+                ),
+              ),
+              trailing: Icon(
+                Icons.edit,
+                color: colorScheme.primary.withOpacity(0.6),
+                size: 20,
+              ),
+              onTap: isLoading ? null : onEdit,
+            ),
+          ],
+          if (showDivider)
+            Divider(
+              height: 1,
+              thickness: 0.5,
+              color: colorScheme.outline.withOpacity(0.3),
+              indent: 72,
+            ),
+        ],
+      ),
+    );
+  }
+
+  // WhatsApp-style settings item
+  Widget _buildSettingsItem({
+    required BuildContext context,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    Widget? trailing,
+    bool showDivider = false,
+  }) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Container(
+      color: colorScheme.surface,
+      child: Column(
+        children: [
+          ListTile(
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 14,
+            ),
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: colorScheme.primary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: colorScheme.primary, size: 22),
+            ),
+            title: Text(
+              title,
+              style: TextStyle(
+                color: colorScheme.onSurface,
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            subtitle: Text(
+              subtitle,
+              style: TextStyle(
+                color: colorScheme.onSurface.withOpacity(0.6),
+                fontSize: 13,
+              ),
+            ),
+            trailing: trailing,
+          ),
+          if (showDivider)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Divider(
+                height: 1,
+                thickness: 0.5,
+                color: colorScheme.outline.withOpacity(0.15),
+              ),
+            ),
+        ],
       ),
     );
   }

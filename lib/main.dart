@@ -1,41 +1,103 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
-
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'providers/auth_provider.dart' as auth_provider;
 import 'providers/chat_provider.dart';
-import 'providers/notification_provider.dart';
-import 'services/notification_listener_service.dart';
-import 'screens/splash_screen.dart';
-import 'screens/login_screen.dart';
-import 'screens/home_screen.dart';
+import 'providers/theme_provider.dart';
+import 'widgets/auth_wrapper.dart';
 
-void main() async {
+/// ✅ Must be annotated for background FCM handling
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp();
+  debugPrint("📩 Background message received: ${message.messageId}");
+  debugPrint("Data: ${message.data}");
+}
+
+final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+    FlutterLocalNotificationsPlugin();
+
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   try {
     await Firebase.initializeApp();
-    print("✅ Firebase initialized successfully");
-    await testFirestoreConnection();
-  } catch (e) {
-    print("❌ Firebase initialization error: $e");
-  }
 
-  runApp(const HasaApp());
+    // ✅ Register background handler properly
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+    // ✅ Initialize local notifications
+    const AndroidInitializationSettings androidInitSettings =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+
+    const InitializationSettings initSettings = InitializationSettings(
+      android: androidInitSettings,
+    );
+
+    await flutterLocalNotificationsPlugin.initialize(initSettings);
+
+    // ✅ Request user permission
+    await _requestNotificationPermission();
+
+    // ✅ Set up foreground listener
+    _setupForegroundMessageListener();
+
+    // ✅ Get FCM Token
+    final fcmToken = await FirebaseMessaging.instance.getToken();
+    debugPrint('✅ FCM Token: $fcmToken');
+
+    runApp(const HasaApp());
+  } catch (e) {
+    debugPrint('❌ Error initializing Firebase: $e');
+    runApp(const HasaApp());
+  }
 }
 
-Future<void> testFirestoreConnection() async {
-  try {
-    await FirebaseFirestore.instance
-        .collection('test')
-        .doc('ping')
-        .set({'status': 'connected', 'timestamp': FieldValue.serverTimestamp()})
-        .timeout(const Duration(seconds: 10));
-    print("✅ Firestore Connected!");
-  } catch (e) {
-    print("⚠️ Firestore connection error: $e");
+Future<void> _requestNotificationPermission() async {
+  FirebaseMessaging messaging = FirebaseMessaging.instance;
+  NotificationSettings settings = await messaging.requestPermission(
+    alert: true,
+    badge: true,
+    sound: true,
+  );
+
+  if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+    debugPrint('✅ Notifications permission granted');
+  } else {
+    debugPrint('⚠️ Notifications permission denied');
   }
+}
+
+void _setupForegroundMessageListener() {
+  FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+    debugPrint('📢 Foreground message: ${message.messageId}');
+    debugPrint('Data: ${message.data}');
+    debugPrint('Notification: ${message.notification?.title}');
+
+    if (message.notification != null) {
+      const AndroidNotificationDetails androidDetails =
+          AndroidNotificationDetails(
+        'high_importance_channel',
+        'High Importance Notifications',
+        importance: Importance.max,
+        priority: Priority.high,
+        icon: '@mipmap/ic_launcher',
+      );
+
+      const NotificationDetails notificationDetails = NotificationDetails(
+        android: androidDetails,
+      );
+
+      flutterLocalNotificationsPlugin.show(
+        0,
+        message.notification?.title ?? 'New Message',
+        message.notification?.body ?? '',
+        notificationDetails,
+      );
+    }
+  });
 }
 
 class HasaApp extends StatelessWidget {
@@ -45,89 +107,24 @@ class HasaApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(
-          create: (context) => auth_provider.AuthProvider(),
-        ),
-        ChangeNotifierProvider(create: (context) => ChatProvider()),
-        ChangeNotifierProvider(create: (context) => NotificationProvider()),
+        ChangeNotifierProvider(create: (_) => auth_provider.AuthProvider()),
+        ChangeNotifierProvider(create: (_) => ChatProvider()),
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
       ],
-      child: MaterialApp(
-        title: 'Hasa Chat App',
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData(primarySwatch: Colors.deepPurple),
-        home: const AuthWrapper(),
+      child: Consumer<ThemeProvider>(
+        builder: (context, themeProvider, _) {
+          return MaterialApp(
+            title: 'Hasa Chat App',
+            debugShowCheckedModeBanner: false,
+            theme: themeProvider.lightTheme,
+            darkTheme: themeProvider.darkTheme,
+            themeMode: themeProvider.isDarkMode
+                ? ThemeMode.dark
+                : ThemeMode.light,
+            home: const AuthWrapper(),
+          );
+        },
       ),
-    );
-  }
-}
-
-/// This widget decides whether to show the Splash, Login, or Home screen
-class AuthWrapper extends StatefulWidget {
-  const AuthWrapper({super.key});
-
-  @override
-  State<AuthWrapper> createState() => _AuthWrapperState();
-}
-
-class _AuthWrapperState extends State<AuthWrapper> {
-  final NotificationListenerService _notificationListener =
-      NotificationListenerService();
-  bool _notificationListenerInitialized = false;
-
-  @override
-  void initState() {
-    super.initState();
-    // Initialize notifications when app starts
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final notificationProvider = Provider.of<NotificationProvider>(
-        context,
-        listen: false,
-      );
-      notificationProvider.initialize();
-    });
-  }
-
-  @override
-  void dispose() {
-    _notificationListener.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Consumer<auth_provider.AuthProvider>(
-      builder: (context, authProvider, child) {
-        // Show splash screen only during initial authentication check
-        if (authProvider.isInitializing) {
-          return const SplashScreen();
-        }
-
-        // Handle different auth states
-        switch (authProvider.authState) {
-          case auth_provider.AuthState.authenticated:
-            // User is authenticated and has profile data
-            // Initialize notification listener for authenticated user (only once)
-            if (!_notificationListenerInitialized) {
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                _notificationListener.initialize();
-                _notificationListenerInitialized = true;
-              });
-            }
-            return const ChatListScreen();
-
-          case auth_provider.AuthState.authenticatedWithoutProfile:
-            // User is authenticated but needs to complete profile
-            // For now, redirect to login screen - you can create ProfileSetupScreen later
-            return const LoginScreen();
-
-          case auth_provider.AuthState.unauthenticated:
-          case auth_provider.AuthState.unknown:
-            // User is not authenticated or unknown state
-            _notificationListener.dispose(); // Stop listener when not authenticated
-            _notificationListenerInitialized = false; // Reset flag
-            return const LoginScreen();
-        }
-      },
     );
   }
 }
