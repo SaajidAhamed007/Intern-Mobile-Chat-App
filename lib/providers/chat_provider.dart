@@ -23,8 +23,9 @@ class ChatProvider with ChangeNotifier {
 
   /// Initialize chat with another user
   void initializeChat(String otherUserId) {
-    if (_currentChatUserId == otherUserId)
+    if (_currentChatUserId == otherUserId) {
       return; // Already initialized for this user
+    }
 
     _clearChat();
     _currentChatUserId = otherUserId;

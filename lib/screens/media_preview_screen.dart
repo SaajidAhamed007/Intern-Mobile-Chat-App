@@ -144,7 +144,7 @@ class _MediaPreviewScreenState extends State<MediaPreviewScreen> {
               width: 80,
               height: 80,
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.5),
+                color: Colors.black.withValues(alpha:0.5),
                 shape: BoxShape.circle,
               ),
               child: Icon(
@@ -218,7 +218,7 @@ class _MediaPreviewScreenState extends State<MediaPreviewScreen> {
         children: [
           // Media display area
           Expanded(
-            child: Container(
+            child: SizedBox(
               width: double.infinity,
               child: _buildMediaWidget(context),
             ),
@@ -226,7 +226,7 @@ class _MediaPreviewScreenState extends State<MediaPreviewScreen> {
 
           // Caption and send area
           Container(
-            color: backgroundColor.withOpacity(0.9),
+            color: backgroundColor.withValues(alpha:0.9),
             padding: const EdgeInsets.all(16),
             child: SafeArea(
               child: Row(
@@ -247,7 +247,7 @@ class _MediaPreviewScreenState extends State<MediaPreviewScreen> {
                         decoration: InputDecoration(
                           hintText: 'Add a caption...',
                           hintStyle: TextStyle(
-                            color: iconColor.withOpacity(0.6),
+                            color: iconColor.withValues(alpha:0.6),
                           ),
                           border: InputBorder.none,
                           contentPadding: const EdgeInsets.symmetric(

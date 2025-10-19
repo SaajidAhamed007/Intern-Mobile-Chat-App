@@ -41,7 +41,7 @@ class MediaSelectionBottomSheet extends StatelessWidget {
             height: 4,
             width: 40,
             decoration: BoxDecoration(
-              color: colorScheme.onSurface.withOpacity(0.3),
+              color: colorScheme.onSurface.withValues(alpha: 0.3),
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -134,19 +134,6 @@ class MediaSelectionBottomSheet extends StatelessWidget {
                 ),
 
                 const SizedBox(height: 12),
-
-                // Audio option
-                _buildMediaOption(
-                  context,
-                  icon: Icons.audiotrack,
-                  title: 'Audio',
-                  subtitle: 'Send audio file',
-                  color: Colors.orange,
-                  onTap: () {
-                    Navigator.pop(context);
-                    onMediaSelected(MediaType.audio, null);
-                  },
-                ),
               ],
             ),
           ),
@@ -174,16 +161,16 @@ class MediaSelectionBottomSheet extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: colorScheme.surfaceVariant.withOpacity(0.3),
+          color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: colorScheme.outline.withOpacity(0.1)),
+          border: Border.all(color: colorScheme.outline.withValues(alpha: 0.1)),
         ),
         child: Column(
           children: [
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
+                color: color.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(icon, color: color, size: 24),
@@ -202,7 +189,7 @@ class MediaSelectionBottomSheet extends StatelessWidget {
               subtitle,
               style: TextStyle(
                 fontSize: 12,
-                color: colorScheme.onSurface.withOpacity(0.6),
+                color: colorScheme.onSurface.withValues(alpha: 0.6),
               ),
               textAlign: TextAlign.center,
             ),

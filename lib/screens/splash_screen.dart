@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
-import 'home_screen.dart'; // after login success
-import 'login_screen.dart'; // for users authenticated but no profile
-
+import 'home_screen.dart';
+import 'auth/login_screen.dart';
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -23,7 +22,7 @@ class _SplashScreenState extends State<SplashScreen>
 
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 2),
+      duration: const Duration(seconds: 1),
     );
 
     _fadeAnimation = CurvedAnimation(
@@ -39,7 +38,7 @@ class _SplashScreenState extends State<SplashScreen>
     _controller.forward();
 
     // Delay a bit to let animation play before checking auth state
-    Future.delayed(const Duration(seconds: 2), _checkAuthState);
+    Future.delayed(const Duration(seconds: 10), _checkAuthState);
   }
 
   Future<void> _checkAuthState() async {
@@ -92,7 +91,7 @@ class _SplashScreenState extends State<SplashScreen>
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xFF6A1B9A), Color(0xFF8E24AA), Color(0xFFAB47BC)],
+            colors: [Color(0xFF3730A3), Color.fromARGB(255, 36, 31, 111), Color.fromARGB(255, 24, 21, 73)],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -110,7 +109,7 @@ class _SplashScreenState extends State<SplashScreen>
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: Colors.white.withOpacity(0.2),
+                      color: Colors.white.withValues(alpha:0.2),
                       boxShadow: const [
                         BoxShadow(
                           color: Colors.black26,
@@ -148,7 +147,7 @@ class _SplashScreenState extends State<SplashScreen>
                   'Connect. Chat. Share.',
                   style: TextStyle(
                     fontSize: 16,
-                    color: Colors.white.withOpacity(0.9),
+                    color: Colors.white.withValues(alpha:0.9),
                     letterSpacing: 1.5,
                     fontWeight: FontWeight.w300,
                   ),
@@ -167,7 +166,7 @@ class _SplashScreenState extends State<SplashScreen>
                           ? 'Initializing Firebase...'
                           : 'Loading user session...',
                       style: TextStyle(
-                        color: Colors.white.withOpacity(0.8),
+                        color: Colors.white.withValues(alpha:0.8),
                         fontSize: 14,
                         letterSpacing: 1.0,
                       ),

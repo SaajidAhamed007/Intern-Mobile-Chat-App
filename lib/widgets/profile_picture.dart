@@ -13,7 +13,7 @@ class ProfilePicture extends StatelessWidget {
   final bool isUploading;
 
   const ProfilePicture({
-    Key? key,
+    super.key,
     this.imageUrl,
     this.name,
     this.size = 50,
@@ -24,7 +24,7 @@ class ProfilePicture extends StatelessWidget {
     this.showEditIcon = false,
     this.onEditTap,
     this.isUploading = false,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -55,7 +55,7 @@ class ProfilePicture extends StatelessWidget {
               height: size,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.black.withOpacity(0.6),
+                color: Colors.black.withValues(alpha:0.6),
               ),
               child: Center(
                 child: SizedBox(
@@ -114,7 +114,7 @@ class ProfilePicture extends StatelessWidget {
             width: size,
             height: size,
             decoration: BoxDecoration(
-              color: colorScheme.surfaceVariant,
+              color: colorScheme.surfaceContainerHighest,
               shape: BoxShape.circle,
             ),
             child: Center(
@@ -199,11 +199,11 @@ class SmallProfilePicture extends StatelessWidget {
   final double size;
 
   const SmallProfilePicture({
-    Key? key,
+    super.key,
     this.imageUrl,
     this.name,
     this.size = 40,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -220,13 +220,13 @@ class LargeProfilePicture extends StatelessWidget {
   final bool isUploading;
 
   const LargeProfilePicture({
-    Key? key,
+    super.key,
     this.imageUrl,
     this.name,
     this.onEditTap,
     this.showEditIcon = false,
     this.isUploading = false,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

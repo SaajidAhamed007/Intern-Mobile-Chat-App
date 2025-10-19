@@ -82,9 +82,11 @@ class _MessageSkeletonState extends State<MessageSkeleton>
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
           color: isMe
-              ? theme.colorScheme.primary.withOpacity(_animation.value * 0.3)
-              : theme.colorScheme.surfaceVariant.withOpacity(
-                  _animation.value * 0.5,
+              ? theme.colorScheme.primary.withValues(
+                  alpha: _animation.value * 0.3,
+                )
+              : theme.colorScheme.surfaceContainerHighest.withValues(
+                  alpha: _animation.value * 0.5,
                 ),
           borderRadius: BorderRadius.circular(20),
         ),
@@ -98,9 +100,9 @@ class _MessageSkeletonState extends State<MessageSkeleton>
               width: width * 0.8,
               decoration: BoxDecoration(
                 color: isMe
-                    ? Colors.white.withOpacity(_animation.value * 0.6)
-                    : theme.colorScheme.onSurfaceVariant.withOpacity(
-                        _animation.value * 0.4,
+                    ? Colors.white.withValues(alpha: _animation.value * 0.6)
+                    : theme.colorScheme.onSurfaceVariant.withValues(
+                        alpha: _animation.value * 0.4,
                       ),
                 borderRadius: BorderRadius.circular(8),
               ),
@@ -113,9 +115,9 @@ class _MessageSkeletonState extends State<MessageSkeleton>
               width: width * 0.5,
               decoration: BoxDecoration(
                 color: isMe
-                    ? Colors.white.withOpacity(_animation.value * 0.6)
-                    : theme.colorScheme.onSurfaceVariant.withOpacity(
-                        _animation.value * 0.4,
+                    ? Colors.white.withValues(alpha: _animation.value * 0.6)
+                    : theme.colorScheme.onSurfaceVariant.withValues(
+                        alpha: _animation.value * 0.4,
                       ),
                 borderRadius: BorderRadius.circular(8),
               ),
@@ -131,9 +133,9 @@ class _MessageSkeletonState extends State<MessageSkeleton>
                   width: 40,
                   decoration: BoxDecoration(
                     color: isMe
-                        ? Colors.white.withOpacity(_animation.value * 0.4)
-                        : theme.colorScheme.onSurfaceVariant.withOpacity(
-                            _animation.value * 0.3,
+                        ? Colors.white.withValues(alpha: _animation.value * 0.4)
+                        : theme.colorScheme.onSurfaceVariant.withValues(
+                            alpha: _animation.value * 0.3,
                           ),
                     borderRadius: BorderRadius.circular(6),
                   ),
@@ -144,7 +146,9 @@ class _MessageSkeletonState extends State<MessageSkeleton>
                     height: 12,
                     width: 12,
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(_animation.value * 0.4),
+                      color: Colors.white.withValues(
+                        alpha: _animation.value * 0.4,
+                      ),
                       borderRadius: BorderRadius.circular(6),
                     ),
                   ),

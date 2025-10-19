@@ -6,11 +6,14 @@ import '../models/contact_model.dart';
 import '../models/message_model.dart';
 import '../providers/chat_provider.dart';
 import '../services/unified_upload_service.dart';
+import '../services/contact_service.dart';
 import '../widgets/message_skeleton.dart';
 import '../widgets/chat_bubble.dart';
 import '../widgets/profile_picture.dart';
 import '../widgets/media_selection_bottom_sheet.dart';
 import 'media_preview_screen.dart' as preview;
+import 'other_user_profile_screen.dart';
+import '../models/user_model.dart';
 
 class ChatScreen extends StatefulWidget {
   final ContactModel contact;
@@ -24,8 +27,11 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final ContactService _contactService = ContactService();
   String? _lastMessageId;
   bool _isUploadingMedia = false;
+  UserRelationshipStatus _relationshipStatus = UserRelationshipStatus.contacts;
+  bool _isLoadingRelationship = true;
 
   @override
   void initState() {
@@ -36,7 +42,26 @@ class _ChatScreenState extends State<ChatScreen> {
       final chatProvider = Provider.of<ChatProvider>(context, listen: false);
       chatProvider.initializeChat(widget.contact.id);
       _scrollToBottomInstant();
+      _loadRelationshipStatus();
     });
+  }
+
+  Future<void> _loadRelationshipStatus() async {
+    try {
+      final status = await _contactService.getRelationshipStatus(
+        widget.contact.id,
+      );
+      setState(() {
+        _relationshipStatus = status;
+        _isLoadingRelationship = false;
+      });
+    } catch (e) {
+      debugPrint('Error loading relationship status: $e');
+      setState(() {
+        _relationshipStatus = UserRelationshipStatus.none;
+        _isLoadingRelationship = false;
+      });
+    }
   }
 
   @override
@@ -44,6 +69,10 @@ class _ChatScreenState extends State<ChatScreen> {
     super.didChangeDependencies();
     // Listen for message changes
     _updateMessages();
+    // Refresh relationship status in case it changed
+    if (!_isLoadingRelationship) {
+      _loadRelationshipStatus();
+    }
   }
 
   void _updateMessages() {
@@ -96,6 +125,72 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
+  void _navigateToUserProfile() {
+    // Convert ContactModel to UserModel
+    final userModel = UserModel(
+      uid: widget.contact.id,
+      name: widget.contact.name,
+      email: widget.contact.email,
+      phoneNumber: widget.contact.phoneNumber,
+      profilePic: widget.contact.profilePic,
+      bio: null, // ContactModel doesn't have bio field, so set to null
+    );
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => OtherUserProfileScreen(user: userModel),
+      ),
+    );
+  }
+
+  Future<void> _sendContactRequest() async {
+    try {
+      setState(() => _isLoadingRelationship = true);
+
+      final success = await _contactService.sendContactRequest(
+        receiverId: widget.contact.id,
+        receiverName: widget.contact.name,
+        receiverEmail: widget.contact.email,
+        message: 'Hi, I would like to add you as a contact.',
+      );
+
+      if (success) {
+        setState(() {
+          _relationshipStatus = UserRelationshipStatus.requestSent;
+          _isLoadingRelationship = false;
+        });
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Contact request sent successfully!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } else {
+        setState(() => _isLoadingRelationship = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Failed to send contact request. Please try again.',
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      setState(() => _isLoadingRelationship = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
   Future<void> _sendMessage() async {
     final message = _messageController.text.trim();
     if (message.isEmpty) return;
@@ -142,7 +237,8 @@ class _ChatScreenState extends State<ChatScreen> {
           await _handleVideoSelection(source!);
           break;
         case MediaType.audio:
-          await _handleAudioSelection();
+          // Audio feature disabled
+          debugPrint('Audio feature is disabled');
           break;
         case MediaType.document:
           await _handleDocumentSelection();
@@ -404,12 +500,6 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  Future<void> _handleAudioSelection() async {
-    debugPrint('🎵 Starting audio upload');
-    final result = await UnifiedUploadService.uploadAudio();
-    await _processUploadResult(result, 'audio');
-  }
-
   Future<void> _handleDocumentSelection() async {
     debugPrint('📄 Starting document upload');
     final result = await UnifiedUploadService.uploadDocument();
@@ -455,6 +545,210 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Widget _buildContactRequestUI(ThemeData theme) {
+    if (_isLoadingRelationship) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        child: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    switch (_relationshipStatus) {
+      case UserRelationshipStatus.none:
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            border: Border(
+              top: BorderSide(
+                color: theme.colorScheme.outline.withValues(alpha: 0.2),
+              ),
+            ),
+          ),
+          child: Column(
+            children: [
+              Icon(
+                Icons.person_add,
+                size: 48,
+                color: theme.colorScheme.primary,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Add ${widget.contact.name} to your contacts to start chatting',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 16,
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                ),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: _sendContactRequest,
+                icon: const Icon(Icons.person_add),
+                label: const Text('Add to Friends'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: theme.colorScheme.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+
+      case UserRelationshipStatus.requestSent:
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            border: Border(
+              top: BorderSide(
+                color: theme.colorScheme.outline.withValues(alpha: 0.2),
+              ),
+            ),
+          ),
+          child: Column(
+            children: [
+              Icon(Icons.schedule, size: 48, color: theme.colorScheme.primary),
+              const SizedBox(height: 12),
+              Text(
+                'Contact request sent to ${widget.contact.name}',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 16,
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'You can start chatting once they accept your request',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                ),
+              ),
+            ],
+          ),
+        );
+
+      case UserRelationshipStatus.requestReceived:
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            border: Border(
+              top: BorderSide(
+                color: theme.colorScheme.outline.withValues(alpha: 0.2),
+              ),
+            ),
+          ),
+          child: Column(
+            children: [
+              Icon(
+                Icons.notifications,
+                size: 48,
+                color: theme.colorScheme.primary,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '${widget.contact.name} sent you a contact request',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 16,
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Accept their request to start chatting',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                ),
+              ),
+            ],
+          ),
+        );
+
+      case UserRelationshipStatus.contacts:
+        return _buildMessageInput(theme);
+    }
+  }
+
+  Widget _buildMessageInput(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        border: Border(
+          top: BorderSide(
+            color: theme.colorScheme.outline.withValues(alpha: 0.2),
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: _isUploadingMedia ? null : _showMediaPicker,
+            icon: _isUploadingMedia
+                ? SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: theme.colorScheme.primary,
+                    ),
+                  )
+                : Icon(
+                    Icons.attach_file,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                  ),
+          ),
+          Expanded(
+            child: TextField(
+              controller: _messageController,
+              decoration: InputDecoration(
+                hintText: 'Type a message...',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(25),
+                  borderSide: BorderSide.none,
+                ),
+                filled: true,
+                fillColor: theme.colorScheme.surfaceContainerHighest.withValues(
+                  alpha: 0.3,
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+              ),
+              maxLines: null,
+              keyboardType: TextInputType.multiline,
+              textInputAction: TextInputAction.newline,
+              onSubmitted: (_) => _sendMessage(),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primary,
+              shape: BoxShape.circle,
+            ),
+            child: IconButton(
+              onPressed: _sendMessage,
+              icon: const Icon(Icons.send, color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -464,37 +758,40 @@ class _ChatScreenState extends State<ChatScreen> {
         backgroundColor: theme.colorScheme.surface,
         automaticallyImplyLeading: false,
         elevation: 0.3,
-        title: Row(
-          children: [
-            SmallProfilePicture(
-              imageUrl: widget.contact.profilePic,
-              name: widget.contact.name,
-              size: 36,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    widget.contact.name,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: theme.colorScheme.onSurface,
-                    ),
-                  ),
-                  Text(
-                    'Online',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: theme.colorScheme.primary,
-                    ),
-                  ),
-                ],
+        title: GestureDetector(
+          onTap: _navigateToUserProfile,
+          child: Row(
+            children: [
+              SmallProfilePicture(
+                imageUrl: widget.contact.profilePic,
+                name: widget.contact.name,
+                size: 36,
               ),
-            ),
-          ],
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.contact.name,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                    ),
+                    Text(
+                      'Online',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           IconButton(
@@ -508,22 +805,6 @@ class _ChatScreenState extends State<ChatScreen> {
               // TODO: Add video call functionality
             },
             icon: Icon(Icons.videocam, color: theme.colorScheme.onSurface),
-          ),
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              // TODO: Handle menu actions
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: 'contact_info',
-                child: Text('Contact info'),
-              ),
-              const PopupMenuItem(
-                value: 'clear_chat',
-                child: Text('Clear chat'),
-              ),
-              const PopupMenuItem(value: 'block', child: Text('Block contact')),
-            ],
           ),
         ],
       ),
@@ -545,8 +826,8 @@ class _ChatScreenState extends State<ChatScreen> {
                             Icon(
                               Icons.chat_bubble_outline,
                               size: 64,
-                              color: theme.colorScheme.onSurface.withOpacity(
-                                0.3,
+                              color: theme.colorScheme.onSurface.withValues(
+                                alpha: 0.3,
                               ),
                             ),
                             const SizedBox(height: 16),
@@ -554,8 +835,8 @@ class _ChatScreenState extends State<ChatScreen> {
                               'No messages yet',
                               style: TextStyle(
                                 fontSize: 18,
-                                color: theme.colorScheme.onSurface.withOpacity(
-                                  0.6,
+                                color: theme.colorScheme.onSurface.withValues(
+                                  alpha: 0.6,
                                 ),
                               ),
                             ),
@@ -564,8 +845,8 @@ class _ChatScreenState extends State<ChatScreen> {
                               'Start a conversation with ${widget.contact.name}',
                               style: TextStyle(
                                 fontSize: 14,
-                                color: theme.colorScheme.onSurface.withOpacity(
-                                  0.4,
+                                color: theme.colorScheme.onSurface.withValues(
+                                  alpha: 0.4,
                                 ),
                               ),
                             ),
@@ -584,74 +865,8 @@ class _ChatScreenState extends State<ChatScreen> {
                       ),
               ),
 
-              // Message Input
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surface,
-                  border: Border(
-                    top: BorderSide(
-                      color: theme.colorScheme.outline.withOpacity(0.2),
-                    ),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    IconButton(
-                      onPressed: _isUploadingMedia ? null : _showMediaPicker,
-                      icon: _isUploadingMedia
-                          ? SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: theme.colorScheme.primary,
-                              ),
-                            )
-                          : Icon(
-                              Icons.attach_file,
-                              color: theme.colorScheme.onSurface.withOpacity(
-                                0.6,
-                              ),
-                            ),
-                    ),
-                    Expanded(
-                      child: TextField(
-                        controller: _messageController,
-                        decoration: InputDecoration(
-                          hintText: 'Type a message...',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(25),
-                            borderSide: BorderSide.none,
-                          ),
-                          filled: true,
-                          fillColor: theme.colorScheme.surfaceVariant
-                              .withOpacity(0.3),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                        ),
-                        maxLines: null,
-                        keyboardType: TextInputType.multiline,
-                        textInputAction: TextInputAction.newline,
-                        onSubmitted: (_) => _sendMessage(),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.primary,
-                        shape: BoxShape.circle,
-                      ),
-                      child: IconButton(
-                        onPressed: _sendMessage,
-                        icon: const Icon(Icons.send, color: Colors.white),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              // Message Input or Contact Request UI
+              _buildContactRequestUI(theme),
             ],
           );
         },
@@ -747,7 +962,9 @@ class _ChatScreenState extends State<ChatScreen> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceVariant.withOpacity(0.8),
+            color: theme.colorScheme.surfaceContainerHighest.withValues(
+              alpha: 0.8,
+            ),
             borderRadius: BorderRadius.circular(20),
           ),
           child: Text(

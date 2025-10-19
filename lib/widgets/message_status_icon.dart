@@ -57,7 +57,7 @@ class _MessageStatusIconState extends State<MessageStatusIcon>
 
     final Color iconColor =
         widget.color ??
-        (widget.isMe ? Colors.white.withOpacity(0.7) : Colors.grey);
+        (widget.isMe ? Colors.white.withValues(alpha:0.7) : Colors.grey);
 
     switch (widget.status) {
       case 'pending':
@@ -137,17 +137,17 @@ class MessageStatusUtils {
   static Color getStatusColor(String status, {bool isMe = true}) {
     switch (status) {
       case 'pending':
-        return isMe ? Colors.white.withOpacity(0.7) : Colors.grey;
+        return isMe ? Colors.white.withValues(alpha:0.7) : Colors.grey;
       case 'sent':
-        return isMe ? Colors.white.withOpacity(0.7) : Colors.grey;
+        return isMe ? Colors.white.withValues(alpha:0.7) : Colors.grey;
       case 'delivered':
-        return isMe ? Colors.white.withOpacity(0.7) : Colors.grey;
+        return isMe ? Colors.white.withValues(alpha:0.7) : Colors.grey;
       case 'seen':
         return Colors.blue;
       case 'failed':
         return Colors.red;
       default:
-        return isMe ? Colors.white.withOpacity(0.7) : Colors.grey;
+        return isMe ? Colors.white.withValues(alpha:0.7) : Colors.grey;
     }
   }
 

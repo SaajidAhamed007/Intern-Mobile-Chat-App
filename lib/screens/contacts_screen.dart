@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../providers/auth_provider.dart' as auth_provider;
 import '../models/contact_model.dart';
-import '../models/user_model.dart';
+import '../services/contact_service.dart';
+import '../widgets/profile_picture.dart';
+import 'user_search_screen.dart';
+import 'contact_requests_screen.dart';
+import 'other_user_profile_screen.dart';
+import 'chat_screen.dart';
 
 class ContactsScreen extends StatefulWidget {
   const ContactsScreen({super.key});
@@ -12,72 +15,46 @@ class ContactsScreen extends StatefulWidget {
 }
 
 class _ContactsScreenState extends State<ContactsScreen> {
-  final TextEditingController _searchController = TextEditingController();
-  List<UserModel> _searchResults = [];
-  bool _isSearching = false;
+  final ContactService _contactService = ContactService();
+  String _searchQuery = '';
 
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
+  void _openUserSearch() {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (context) => const UserSearchScreen()));
   }
 
-  Future<void> _searchUsers(String query) async {
-    if (query.trim().isEmpty) {
-      setState(() {
-        _searchResults = [];
-        _isSearching = false;
-      });
-      return;
-    }
-
-    setState(() {
-      _isSearching = true;
-    });
-
-    final authProvider = Provider.of<auth_provider.AuthProvider>(
-      context,
-      listen: false,
+  void _openContactRequests() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (context) => const ContactRequestsScreen()),
     );
-
-    final results = await authProvider.searchUsers(query);
-
-    setState(() {
-      _searchResults = results;
-      _isSearching = false;
-    });
   }
 
-  Future<void> _addContact(UserModel user) async {
-    final authProvider = Provider.of<auth_provider.AuthProvider>(
-      context,
-      listen: false,
+  void _openChat(ContactModel contact) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (context) => ChatScreen(contact: contact)),
     );
+  }
 
-    final success = await authProvider.addContact(
-      contactEmail: user.email,
-      contactName: user.name,
-      contactPhone: user.phoneNumber,
-    );
-
-    if (success && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${user.name} added to contacts!'),
-          backgroundColor: Colors.green,
-        ),
-      );
-      _searchController.clear();
-      setState(() {
-        _searchResults = [];
-      });
-    } else if (!success && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(authProvider.errorMessage ?? 'Failed to add contact'),
-          backgroundColor: Colors.red,
-        ),
-      );
+  void _viewProfile(ContactModel contact) async {
+    try {
+      final user = await _contactService.getUserById(contact.id);
+      if (user != null && mounted) {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => OtherUserProfileScreen(user: user),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading profile: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -104,255 +81,479 @@ class _ContactsScreenState extends State<ContactsScreen> {
     );
 
     if (shouldRemove == true) {
-      final authProvider = Provider.of<auth_provider.AuthProvider>(
-        context,
-        listen: false,
-      );
+      try {
+        final success = await _contactService.removeContact(contact.id);
 
-      final success = await authProvider.removeContact(contact.id);
-
-      if (success && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${contact.name} removed from contacts'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      } else if (!success && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              authProvider.errorMessage ?? 'Failed to remove contact',
+        if (success && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${contact.name} removed from contacts'),
+              backgroundColor: Colors.green,
             ),
-            backgroundColor: Colors.red,
-          ),
-        );
+          );
+        } else if (!success && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to remove contact'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error removing contact: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
     }
   }
 
-  bool _isUserAlreadyContact(UserModel user, List<ContactModel> contacts) {
-    return contacts.any((contact) => contact.id == user.uid);
-  }
-
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     return Scaffold(
+      backgroundColor: colorScheme.surface,
       appBar: AppBar(
-        title: const Text('Add Contacts'),
-        backgroundColor: Colors.deepPurple,
-        foregroundColor: Colors.white,
+        backgroundColor: colorScheme.primary,
+        foregroundColor: colorScheme.onPrimary,
+        elevation: 0,
+        title: Text(
+          'Contacts',
+          style: TextStyle(
+            fontWeight: FontWeight.w500,
+            fontSize: 20,
+            color: colorScheme.onPrimary,
+          ),
+        )
       ),
-      body: Consumer<auth_provider.AuthProvider>(
-        builder: (context, authProvider, child) {
-          final contacts = authProvider.userContacts;
+      body: StreamBuilder<List<ContactModel>>(
+        stream: _contactService.getUserContactsStream(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (snapshot.hasError) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                  const SizedBox(height: 16),
+                  Text('Error loading contacts: ${snapshot.error}'),
+                ],
+              ),
+            );
+          }
+
+          final contacts = snapshot.data ?? [];
+
+          // Filter contacts based on search query
+          final filteredContacts = contacts.where((contact) {
+            return contact.name.toLowerCase().contains(
+                  _searchQuery.toLowerCase(),
+                ) ||
+                contact.email.toLowerCase().contains(
+                  _searchQuery.toLowerCase(),
+                );
+          }).toList();
 
           return Column(
             children: [
-              // Search Section
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  children: [
-                    TextField(
-                      controller: _searchController,
-                      decoration: const InputDecoration(
-                        labelText: 'Search users by email',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.search),
-                        hintText: 'Enter email address',
-                      ),
-                      onChanged: _searchUsers,
+              // Action buttons section
+              Container(
+                decoration: BoxDecoration(
+                  color: colorScheme.primary,
+                  boxShadow: [
+                    BoxShadow(
+                      color: colorScheme.primary.withValues(alpha: 0.15),
+                      blurRadius: 10,
+                      offset: const Offset(0, 5),
                     ),
-                    if (_isSearching) ...[
-                      const SizedBox(height: 16),
-                      const CircularProgressIndicator(),
-                    ],
                   ],
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                  child: Row(
+  children: [
+    // Find People Card
+    Expanded(
+      child: Container(
+        margin: const EdgeInsets.only(right: 8), // space between cards
+        decoration: BoxDecoration(
+          color: colorScheme.surface,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.1),
+              blurRadius: 8,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(16),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: _openUserSearch,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.search,
+                    color: colorScheme.primary,
+                    size: 28,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    "Find People",
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: colorScheme.onSurface,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+
+    // Contact Requests Card
+    Expanded(
+      child: StreamBuilder<List<dynamic>>(
+        stream: _contactService.getReceivedContactRequests(),
+        builder: (context, snapshot) {
+          final requestCount = snapshot.hasData ? snapshot.data!.length : 0;
+          return Container(
+            margin: const EdgeInsets.only(left: 8),
+            decoration: BoxDecoration(
+              color: colorScheme.surface,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.1),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Material(
+              color: Colors.transparent,
+              borderRadius: BorderRadius.circular(16),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: _openContactRequests,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Stack(
+                        alignment: Alignment.topRight,
+                        children: [
+                          Icon(
+                            Icons.person_add_alt_1,
+                            color: requestCount > 0
+                                ? Colors.red
+                                : colorScheme.primary,
+                            size: 28,
+                          ),
+                          if (requestCount > 0)
+                            Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: const BoxDecoration(
+                                color: Colors.red,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Text(
+                                '$requestCount',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        "Requests",
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: colorScheme.onSurface,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    ),
+  ],
+) ,
                 ),
               ),
 
-              // Search Results
-              if (_searchResults.isNotEmpty) ...[
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 16.0),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Search Results:',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.grey,
+              // Search bar for contacts (only show if there are contacts)
+              if (contacts.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: TextField(
+                    onChanged: (value) => setState(() => _searchQuery = value),
+                    style: TextStyle(color: colorScheme.onSurface),
+                    decoration: InputDecoration(
+                      hintText: 'Search contacts...',
+                      hintStyle: TextStyle(
+                        color: colorScheme.onSurface.withValues(alpha: 0.5),
+                      ),
+                      prefixIcon: Icon(
+                        Icons.search,
+                        color: colorScheme.onSurface.withValues(alpha: 0.6),
+                      ),
+                      filled: true,
+                      fillColor: colorScheme.surfaceContainerHighest.withValues(
+                        alpha: 0.5,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(
+                          color: colorScheme.primary,
+                          width: 2,
+                        ),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(height: 8),
-                ...(_searchResults.map(
-                  (user) => ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: Colors.deepPurple[100],
-                      child: Text(
-                        user.name.isNotEmpty ? user.name[0].toUpperCase() : 'U',
-                        style: const TextStyle(
-                          color: Colors.deepPurple,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    title: Text(user.name),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(user.email),
-                        if (user.phoneNumber != null)
-                          Text(
-                            user.phoneNumber!,
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                      ],
-                    ),
-                    trailing: _isUserAlreadyContact(user, contacts)
-                        ? const Icon(Icons.check, color: Colors.green)
-                        : ElevatedButton(
-                            onPressed: authProvider.isLoading
-                                ? null
-                                : () => _addContact(user),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.deepPurple,
-                              foregroundColor: Colors.white,
-                            ),
-                            child: const Text('Add'),
-                          ),
-                  ),
-                )).toList(),
-                const Divider(),
-              ],
 
-              // Current Contacts List
+              // Contacts list
               Expanded(
-                child: contacts.isEmpty
-                    ? const Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.contacts_outlined,
-                              size: 64,
-                              color: Colors.grey,
-                            ),
-                            SizedBox(height: 16),
-                            Text(
-                              'No contacts yet',
-                              style: TextStyle(
-                                fontSize: 18,
-                                color: Colors.grey,
-                              ),
-                            ),
-                            SizedBox(height: 8),
-                            Text(
-                              'Search for users to add them as contacts',
-                              style: TextStyle(color: Colors.grey),
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
-                        ),
-                      )
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Padding(
-                            padding: EdgeInsets.all(16.0),
-                            child: Text(
-                              'Your Contacts:',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.grey,
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            child: ListView.builder(
-                              itemCount: contacts.length,
-                              itemBuilder: (context, index) {
-                                final contact = contacts[index];
-                                return ListTile(
-                                  leading: CircleAvatar(
-                                    backgroundColor: Colors.deepPurple[100],
-                                    child: Text(
-                                      contact.name.isNotEmpty
-                                          ? contact.name[0].toUpperCase()
-                                          : 'C',
-                                      style: const TextStyle(
-                                        color: Colors.deepPurple,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                  title: Text(contact.name),
-                                  subtitle: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(contact.email),
-                                      if (contact.phoneNumber != null)
-                                        Text(
-                                          contact.phoneNumber!,
-                                          style: const TextStyle(fontSize: 12),
-                                        ),
-                                    ],
-                                  ),
-                                  trailing: PopupMenuButton<String>(
-                                    onSelected: (value) {
-                                      if (value == 'remove') {
-                                        _removeContact(contact);
-                                      } else if (value == 'chat') {
-                                        // TODO: Navigate to chat screen with this contact
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          const SnackBar(
-                                            content: Text(
-                                              'Chat feature coming soon!',
-                                            ),
-                                          ),
-                                        );
-                                      }
-                                    },
-                                    itemBuilder: (context) => [
-                                      const PopupMenuItem(
-                                        value: 'chat',
-                                        child: ListTile(
-                                          leading: Icon(Icons.chat),
-                                          title: Text('Start Chat'),
-                                          contentPadding: EdgeInsets.zero,
-                                        ),
-                                      ),
-                                      const PopupMenuItem(
-                                        value: 'remove',
-                                        child: ListTile(
-                                          leading: Icon(
-                                            Icons.delete,
-                                            color: Colors.red,
-                                          ),
-                                          title: Text('Remove Contact'),
-                                          contentPadding: EdgeInsets.zero,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
+                child: _buildContactsList(filteredContacts, contacts.isEmpty),
               ),
             ],
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildContactsList(List<ContactModel> contacts, bool isEmpty) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    if (isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: colorScheme.primary.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.contacts_outlined,
+                size: 60,
+                color: colorScheme.primary.withValues(alpha: 0.6),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'No Contacts Yet',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                color: colorScheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Use the search above to find people\nand send them contact requests',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 16,
+                color: colorScheme.onSurface.withValues(alpha: 0.6),
+                height: 1.4,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (contacts.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.search_off,
+              size: 60,
+              color: colorScheme.onSurface.withValues(alpha: 0.3),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'No contacts found',
+              style: TextStyle(
+                fontSize: 18,
+                color: colorScheme.onSurface.withValues(alpha: 0.6),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      itemCount: contacts.length,
+      itemBuilder: (context, index) {
+        final contact = contacts[index];
+        return _buildContactCard(contact);
+      },
+    );
+  }
+
+  Widget _buildContactCard(ContactModel contact) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.shadow.withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+        border: Border.all(
+          color: colorScheme.outline.withValues(alpha: 0.1),
+          width: 1,
+        ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => _openChat(contact),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                // Profile Picture
+                ProfilePicture(
+                  imageUrl: contact.profilePic,
+                  name: contact.name,
+                ),
+                const SizedBox(width: 12),
+
+                // Contact Info
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        contact.name,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: colorScheme.onSurface,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        contact.email,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: colorScheme.onSurface.withValues(alpha: 0.6),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Action Buttons
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // View Profile Button
+                    IconButton(
+                      onPressed: () => _viewProfile(contact),
+                      icon: Icon(
+                        Icons.person,
+                        color: colorScheme.primary,
+                        size: 20,
+                      ),
+                      tooltip: 'View Profile',
+                    ),
+
+                    // More Options
+                    PopupMenuButton<String>(
+                      icon: Icon(
+                        Icons.more_vert,
+                        color: colorScheme.onSurface.withValues(alpha: 0.6),
+                        size: 20,
+                      ),
+                      onSelected: (value) {
+                        switch (value) {
+                          case 'remove':
+                            _removeContact(contact);
+                            break;
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(
+                          value: 'remove',
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.person_remove,
+                                color: Colors.red,
+                                size: 20,
+                              ),
+                              SizedBox(width: 8),
+                              Text('Remove Contact'),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

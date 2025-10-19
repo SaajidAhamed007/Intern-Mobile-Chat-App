@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../models/message_model.dart';
+import '../models/contact_model.dart';
 
 class ChatService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -22,7 +23,9 @@ class ChatService {
     String title,
     String body,
   ) async {
-    final url = Uri.parse("http://10.166.122.43:3000/send-notification");
+    final url = Uri.parse(
+      "https://hasa-chat-backend-services.onrender.com/send-notification",
+    );
     final payload = {'fcmToken': fcmToken, 'title': title, 'body': body};
 
     print("📤 Sending notification to server: $payload");
@@ -42,6 +45,28 @@ class ChatService {
     }
   }
 
+  /// Check if two users are contacts (have accepted contact request)
+  Future<bool> areUsersContacts(String userId1, String userId2) async {
+    try {
+      // Check if userId2 is in userId1's contacts list
+      final user1Doc = await _firestore.collection('users').doc(userId1).get();
+      if (!user1Doc.exists) return false;
+
+      final user1Data = user1Doc.data()!;
+      final user1Contacts = user1Data['contacts'] as List? ?? [];
+
+      final isUserInContacts = user1Contacts.any(
+        (contact) => contact['id'] == userId2,
+      );
+
+      debugPrint('📋 Contact check: $userId1 -> $userId2 = $isUserInContacts');
+      return isUserInContacts;
+    } catch (e) {
+      debugPrint('❌ Error checking if users are contacts: $e');
+      return false;
+    }
+  }
+
   Future<void> sendMessage({
     required String receiverId,
     required String message,
@@ -54,7 +79,17 @@ class ChatService {
         return;
       }
 
+      // ✅ CHECK: Ensure users are contacts before allowing message sending
+      final areContacts = await areUsersContacts(senderId, receiverId);
+      if (!areContacts) {
+        debugPrint("❌ Cannot send message: Users are not contacts");
+        throw Exception(
+          "You can only message your contacts. Please send a contact request first.",
+        );
+      }
+
       final chatRoomId = getChatRoomId(senderId, receiverId);
+      final currentTime = Timestamp.now();
       final messageId = _firestore
           .collection('chats')
           .doc(chatRoomId)
@@ -69,7 +104,7 @@ class ChatService {
         'receiverId': receiverId,
         'message': message,
         'type': type,
-        'timestamp': FieldValue.serverTimestamp(),
+        'timestamp': currentTime, // Use same timestamp for consistency
         'isSeen': false,
         'status': 'sent',
       };
@@ -80,7 +115,8 @@ class ChatService {
         'participants': [senderId, receiverId],
         'lastMessage': message,
         'lastMessageSenderId': senderId,
-        'lastMessageTime': FieldValue.serverTimestamp(),
+        'lastMessageTime':
+            currentTime, // Use current timestamp for immediate update
         'createdAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
@@ -164,12 +200,33 @@ class ChatService {
 
   /// ✅ Stream chat list (sorted by last message time)
   Stream<List<Map<String, dynamic>>> getChatRoomsStream() {
+    if (currentUserId.isEmpty) {
+      debugPrint('❌ No current user ID - returning empty stream');
+      return Stream.value([]);
+    }
+
     return _firestore
         .collection('chats')
         .where('participants', arrayContains: currentUserId)
-        .orderBy('lastMessageTime', descending: true)
         .snapshots()
-        .map((snapshot) => snapshot.docs.map((doc) => doc.data()).toList());
+        .map((snapshot) {
+          // Get the data and manually sort by lastMessageTime
+          final chatRooms = snapshot.docs.map((doc) => doc.data()).toList();
+
+          // Sort manually by lastMessageTime (most recent first)
+          chatRooms.sort((a, b) {
+            final aTime = a['lastMessageTime'] as Timestamp?;
+            final bTime = b['lastMessageTime'] as Timestamp?;
+
+            if (aTime == null && bTime == null) return 0;
+            if (aTime == null) return 1;
+            if (bTime == null) return -1;
+
+            return bTime.compareTo(aTime); // Descending order
+          });
+
+          return chatRooms;
+        });
   }
 
   /// ✅ Fetch last message between users
@@ -294,4 +351,90 @@ class ChatService {
       return false;
     }
   }
+
+  /// ✅ Get active chat rooms with contact information
+  Stream<List<ChatRoomWithContact>> getActiveChatRoomsStream() {
+    if (currentUserId.isEmpty) {
+      debugPrint('❌ No current user - cannot load chats');
+      return Stream.error('User not authenticated');
+    }
+
+    debugPrint('📱 Loading chats for user: $currentUserId');
+
+    return getChatRoomsStream().asyncMap((chatRooms) async {
+      debugPrint('📊 Found ${chatRooms.length} chat rooms');
+      final List<ChatRoomWithContact> enrichedChats = [];
+
+      for (final chatRoom in chatRooms) {
+        try {
+          final participants = List<String>.from(
+            chatRoom['participants'] ?? [],
+          );
+
+          // Find the other participant (not current user)
+          final otherUserId = participants.firstWhere(
+            (id) => id != currentUserId,
+            orElse: () => '',
+          );
+
+          if (otherUserId.isNotEmpty) {
+            // Get other user's info from Firestore
+            final userDoc = await _firestore
+                .collection('users')
+                .doc(otherUserId)
+                .get();
+
+            if (userDoc.exists) {
+              final userData = userDoc.data()!;
+
+              // Create a ContactModel for the other user
+              final contact = ContactModel(
+                id: otherUserId,
+                name: userData['name'] ?? 'Unknown User',
+                email: userData['email'] ?? '',
+                phoneNumber: userData['phoneNumber'],
+                profilePic: userData['profilePic'],
+                addedAt: DateTime.now(), // This doesn't matter for display
+              );
+
+              enrichedChats.add(
+                ChatRoomWithContact(
+                  chatRoom: chatRoom,
+                  contact: contact,
+                  lastMessageTime: chatRoom['lastMessageTime']?.toDate(),
+                ),
+              );
+            }
+          }
+        } catch (e) {
+          debugPrint('Error enriching chat room: $e');
+        }
+      }
+
+      // Sort by lastMessageTime (most recent first)
+      enrichedChats.sort((a, b) {
+        if (a.lastMessageTime != null && b.lastMessageTime != null) {
+          return b.lastMessageTime!.compareTo(a.lastMessageTime!);
+        }
+        if (a.lastMessageTime != null) return -1;
+        if (b.lastMessageTime != null) return 1;
+        return 0;
+      });
+
+      return enrichedChats;
+    });
+  }
+}
+
+/// Helper class to combine chat room data with contact info
+class ChatRoomWithContact {
+  final Map<String, dynamic> chatRoom;
+  final ContactModel contact;
+  final DateTime? lastMessageTime;
+
+  ChatRoomWithContact({
+    required this.chatRoom,
+    required this.contact,
+    this.lastMessageTime,
+  });
 }

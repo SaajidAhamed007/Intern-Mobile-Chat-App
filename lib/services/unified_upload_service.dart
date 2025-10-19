@@ -27,7 +27,7 @@ class UploadConfig {
 
   /// Default configuration for chat app
   static const UploadConfig defaultConfig = UploadConfig(
-    baseUrl: 'http://10.166.122.43:3000',
+    baseUrl: 'https://hasa-chat-backend-services.onrender.com',
     endpoint: '/upload',
     fieldName: 'file',
   );
@@ -405,8 +405,9 @@ class UnifiedUploadService {
   static String _formatFileSize(int bytes) {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    if (bytes < 1024 * 1024 * 1024)
+    if (bytes < 1024 * 1024 * 1024) {
       return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
   }
 

@@ -22,7 +22,7 @@ class ThemeProvider with ChangeNotifier {
           tertiary: const Color(0xFF3B82F6), // Blue-500
           tertiaryContainer: const Color(0xFFDBEAFE), // Blue-100
           surface: const Color(0xFFFAFAFC),
-          surfaceVariant: const Color(0xFFF1F5F9),
+          surfaceContainerHighest: const Color(0xFFF1F5F9),
           outline: const Color(0xFFCBD5E1),
         ),
     appBarTheme: const AppBarTheme(
@@ -73,7 +73,7 @@ class ThemeProvider with ChangeNotifier {
           tertiary: const Color(0xFF60A5FA), // Blue-400
           tertiaryContainer: const Color(0xFF1E3A8A), // Blue-800
           surface: const Color(0xFF0F0F23),
-          surfaceVariant: const Color(0xFF1E1B3A),
+          surfaceContainerHighest: const Color(0xFF1E1B3A),
           outline: const Color(0xFF475569),
           onSurface: const Color(0xFFE2E8F0),
         ),
@@ -127,9 +127,10 @@ class ThemeProvider with ChangeNotifier {
     try {
       _isDarkMode = !_isDarkMode;
       await _prefs?.setBool(_themeKey, _isDarkMode);
+      debugPrint('🎨 Theme toggled to: ${_isDarkMode ? "Dark" : "Light"} mode');
       notifyListeners();
     } catch (e) {
-      print('❌ Error toggling theme: $e');
+      debugPrint('❌ Error toggling theme: $e');
     }
   }
 

@@ -27,8 +27,8 @@ class ChatBubble extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         decoration: BoxDecoration(
           color: isMe
-              ? theme.colorScheme.primary
-              : theme.colorScheme.surfaceVariant,
+              ? theme.colorScheme.primary.withValues(alpha: 0.1)
+              : theme.colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(20),
         ),
         constraints: BoxConstraints(
@@ -46,8 +46,10 @@ class ChatBubble extends StatelessWidget {
                   _formatTime(message.timestamp),
                   style: TextStyle(
                     color: isMe
-                        ? Colors.white.withOpacity(0.7)
-                        : theme.colorScheme.onSurfaceVariant.withOpacity(0.6),
+                        ? Colors.white.withValues(alpha: 0.7)
+                        : theme.colorScheme.onSurfaceVariant.withValues(
+                            alpha: 0.6,
+                          ),
                     fontSize: 12,
                   ),
                 ),
@@ -88,7 +90,12 @@ class ChatBubble extends StatelessWidget {
       case 'video':
         return _buildVideoMessage(context, message, isMe, theme);
       case 'audio':
-        return _buildAudioMessage(context, message, isMe, theme);
+        // Audio messages are no longer supported, show as unsupported
+        return _buildUnsupportedMessage(
+          'Audio message (unsupported)',
+          isMe,
+          theme,
+        );
       case 'document':
         return _buildDocumentMessage(context, message, isMe, theme);
       case 'text':
@@ -103,6 +110,39 @@ class ChatBubble extends StatelessWidget {
       style: TextStyle(
         color: isMe ? Colors.white : theme.colorScheme.onSurfaceVariant,
         fontSize: 16,
+      ),
+    );
+  }
+
+  Widget _buildUnsupportedMessage(String text, bool isMe, ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isMe ? Colors.white.withValues(alpha: 0.1) : Colors.grey[100],
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.block,
+            color: isMe
+                ? Colors.white.withValues(alpha: 0.7)
+                : Colors.grey[600],
+            size: 20,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            text,
+            style: TextStyle(
+              color: isMe
+                  ? Colors.white.withValues(alpha: 0.7)
+                  : Colors.grey[600],
+              fontSize: 14,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -273,7 +313,7 @@ class ChatBubble extends StatelessWidget {
                                         color: isMe
                                             ? Colors.white54
                                             : theme.colorScheme.onSurfaceVariant
-                                                  .withOpacity(0.7),
+                                                  .withValues(alpha: 0.7),
                                         fontSize: 12,
                                       ),
                                     ),
@@ -289,7 +329,7 @@ class ChatBubble extends StatelessWidget {
                       Positioned.fill(
                         child: Container(
                           decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.5),
+                            color: Colors.black.withValues(alpha: 0.5),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Center(
@@ -439,7 +479,9 @@ class ChatBubble extends StatelessWidget {
                         child: Icon(
                           Icons.videocam,
                           size: 48,
-                          color: theme.colorScheme.primary.withOpacity(0.6),
+                          color: theme.colorScheme.primary.withValues(
+                            alpha: 0.6,
+                          ),
                         ),
                       ),
                     ),
@@ -448,7 +490,7 @@ class ChatBubble extends StatelessWidget {
                   // Play button overlay
                   Container(
                     decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.6),
+                      color: Colors.black.withValues(alpha: 0.6),
                       borderRadius: BorderRadius.circular(30),
                     ),
                     child: Icon(
@@ -468,7 +510,7 @@ class ChatBubble extends StatelessWidget {
                         vertical: 2,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.7),
+                        color: Colors.black.withValues(alpha: 0.7),
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Row(
@@ -494,7 +536,7 @@ class ChatBubble extends StatelessWidget {
                     Positioned.fill(
                       child: Container(
                         decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.5),
+                          color: Colors.black.withValues(alpha: 0.5),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Center(
@@ -574,45 +616,6 @@ class ChatBubble extends StatelessWidget {
     );
   }
 
-  Widget _buildAudioMessage(
-    BuildContext context,
-    MessageModel message,
-    bool isMe,
-    ThemeData theme,
-  ) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: isMe ? Colors.white.withOpacity(0.1) : Colors.grey[100],
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.audiotrack,
-            color: isMe ? Colors.white : theme.colorScheme.primary,
-            size: 24,
-          ),
-          const SizedBox(width: 8),
-          Text(
-            'Audio message',
-            style: TextStyle(
-              color: isMe ? Colors.white : theme.colorScheme.onSurfaceVariant,
-              fontSize: 14,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Icon(
-            Icons.play_arrow,
-            color: isMe ? Colors.white : theme.colorScheme.primary,
-            size: 20,
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildDocumentMessage(
     BuildContext context,
     MessageModel message,
@@ -622,7 +625,7 @@ class ChatBubble extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: isMe ? Colors.white.withOpacity(0.1) : Colors.grey[100],
+        color: isMe ? Colors.white.withValues(alpha: 0.1) : Colors.grey[100],
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(

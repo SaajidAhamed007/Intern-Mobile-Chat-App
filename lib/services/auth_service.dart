@@ -9,9 +9,6 @@ class AuthService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
 
-  /// ----------------------------
-  /// 🔹 Email & Password Sign Up
-  /// ----------------------------
   Future<UserModel?> signUp(
     String name,
     String email,
@@ -37,17 +34,12 @@ class AuthService {
       await _firestore.collection('users').doc(user.uid).set(newUser.toMap());
       return newUser;
     } on FirebaseAuthException catch (e) {
-      print('FirebaseAuth error in signUp: ${e.message}');
       rethrow;
     } catch (e) {
-      print('Unknown error in signUp: $e');
       rethrow;
     }
   }
 
-  /// ----------------------------
-  /// 🔹 Email & Password Login
-  /// ----------------------------
   Future<UserModel?> login(String email, String password) async {
     try {
       final cred = await _auth.signInWithEmailAndPassword(
@@ -61,87 +53,26 @@ class AuthService {
       final doc = await _firestore.collection('users').doc(user.uid).get();
 
       if (!doc.exists || doc.data() == null) {
-        print('⚠️ No Firestore user found for uid: ${user.uid}');
         return null;
       }
 
       return UserModel.fromMap(doc.data() as Map<String, dynamic>);
     } on FirebaseAuthException catch (e) {
-      print('FirebaseAuth error in login: ${e.message}');
       rethrow;
     } catch (e) {
-      print('Unknown error in login: $e');
       rethrow;
     }
   }
 
   /// ----------------------------
-  /// 🔹 Google Sign-In
+  /// 🔹 Google Sign-In (Currently not implemented)
   /// ----------------------------
   Future<UserModel?> googleSignIn() async {
-    try {
-      // Initialize Google Sign-In
-      await _googleSignIn.initialize();
-
-      // Begin the authentication process
-      final GoogleSignInAccount? googleUser = await _googleSignIn
-          .authenticate();
-      if (googleUser == null) return null; // cancelled by user
-
-      // Get ID token for Firebase
-      const List<String> scopes = ['email', 'profile'];
-
-      // Authorize the required scopes
-      await googleUser.authorizationClient.authorizeScopes(scopes);
-
-      // For Firebase, we need to get the authentication headers and extract the token
-      final headers = await googleUser.authorizationClient.authorizationHeaders(
-        scopes,
-      );
-      if (headers == null) {
-        throw Exception('Failed to get authorization headers');
-      }
-
-      // Extract the Bearer token from the Authorization header
-      final authHeader = headers['Authorization'];
-      final accessToken = authHeader?.replaceFirst('Bearer ', '');
-
-      // For ID token, we might need to use a different approach
-      // This is a simplified approach - in production, you might need to
-      // implement a proper OAuth flow or use server-side authentication
-      final credential = GoogleAuthProvider.credential(
-        accessToken: accessToken,
-        // Note: idToken might not be directly available in the new API
-        // You might need to implement server-side authentication for full compatibility
-      );
-
-      // Sign in with Firebase
-      final userCred = await _auth.signInWithCredential(credential);
-      final user = userCred.user;
-      if (user == null) return null;
-
-      // Create or update user in Firestore
-      final userModel = UserModel(
-        uid: user.uid,
-        name: googleUser.displayName ?? '',
-        email: googleUser.email,
-        profilePic: googleUser.photoUrl,
-        // Phone number not available from Google Sign-In by default
-      );
-
-      await _firestore
-          .collection('users')
-          .doc(user.uid)
-          .set(userModel.toMap(), SetOptions(merge: true));
-
-      return userModel;
-    } on FirebaseAuthException catch (e) {
-      print('FirebaseAuth error in googleSignIn: ${e.message}');
-      rethrow;
-    } catch (e) {
-      print('Unknown error in googleSignIn: $e');
-      rethrow;
-    }
+    // TODO: Implement Google Sign-In when needed
+    // The current implementation uses an incompatible API
+    throw UnimplementedError(
+      'Google Sign-In not yet implemented for this version',
+    );
   }
 
   /// ----------------------------
@@ -155,13 +86,11 @@ class AuthService {
       final doc = await _firestore.collection('users').doc(user.uid).get();
 
       if (!doc.exists || doc.data() == null) {
-        print('⚠️ No Firestore user found for uid: ${user.uid}');
         return null;
       }
 
       return UserModel.fromMap(doc.data() as Map<String, dynamic>);
     } catch (e) {
-      print('Error getting current user: $e');
       return null;
     }
   }
@@ -174,7 +103,6 @@ class AuthService {
       final doc = await _firestore.collection('users').doc(uid).get();
       return doc.exists;
     } catch (e) {
-      print('Error checking user existence: $e');
       return false;
     }
   }
@@ -205,7 +133,6 @@ class AuthService {
       // Get current user data
       final doc = await _firestore.collection('users').doc(user.uid).get();
       if (!doc.exists || doc.data() == null) {
-        print('⚠️ No Firestore user found for uid: ${user.uid}');
         return null;
       }
 
@@ -234,7 +161,6 @@ class AuthService {
 
       return updatedUser;
     } catch (e) {
-      print('Error updating user profile: $e');
       rethrow;
     }
   }
@@ -313,10 +239,8 @@ class AuthService {
       // Return updated user model
       return userData.copyWith(contacts: updatedContacts);
     } on FirebaseAuthException catch (e) {
-      print('FirebaseAuth error in addContact: ${e.message}');
       rethrow;
     } catch (e) {
-      print('Error adding contact: $e');
       rethrow;
     }
   }
@@ -357,10 +281,8 @@ class AuthService {
       // Return updated user model
       return userData.copyWith(contacts: updatedContacts);
     } on FirebaseAuthException catch (e) {
-      print('FirebaseAuth error in removeContact: ${e.message}');
       rethrow;
     } catch (e) {
-      print('Error removing contact: $e');
       rethrow;
     }
   }
@@ -398,7 +320,6 @@ class AuthService {
 
       return users;
     } catch (e) {
-      print('Error searching users: $e');
       return [];
     }
   }

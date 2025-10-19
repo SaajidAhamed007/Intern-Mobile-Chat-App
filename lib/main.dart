@@ -77,22 +77,34 @@ void _setupForegroundMessageListener() {
     debugPrint('Notification: ${message.notification?.title}');
 
     if (message.notification != null) {
-      const AndroidNotificationDetails androidDetails =
-          AndroidNotificationDetails(
-        'high_importance_channel',
-        'High Importance Notifications',
-        importance: Importance.max,
-        priority: Priority.high,
-        icon: '@mipmap/ic_launcher',
-      );
+      // Determine notification channel based on message content
+      String channelId = 'high_importance_channel';
+      String channelName = 'High Importance Notifications';
+      String icon = '@mipmap/ic_launcher';
 
-      const NotificationDetails notificationDetails = NotificationDetails(
+      // Check if this is a contact request notification
+      final title = message.notification?.title ?? '';
+      if (title.contains('Contact Request')) {
+        channelId = 'contact_requests_channel';
+        channelName = 'Contact Requests';
+      }
+
+      final AndroidNotificationDetails androidDetails =
+          AndroidNotificationDetails(
+            channelId,
+            channelName,
+            importance: Importance.max,
+            priority: Priority.high,
+            icon: icon,
+          );
+
+      final NotificationDetails notificationDetails = NotificationDetails(
         android: androidDetails,
       );
 
       flutterLocalNotificationsPlugin.show(
-        0,
-        message.notification?.title ?? 'New Message',
+        DateTime.now().millisecondsSinceEpoch ~/ 1000, // Unique ID
+        message.notification?.title ?? 'New Notification',
         message.notification?.body ?? '',
         notificationDetails,
       );
@@ -100,16 +112,44 @@ void _setupForegroundMessageListener() {
   });
 }
 
-class HasaApp extends StatelessWidget {
+class HasaApp extends StatefulWidget {
   const HasaApp({super.key});
 
   @override
+  State<HasaApp> createState() => _HasaAppState();
+}
+
+class _HasaAppState extends State<HasaApp> {
+  late ThemeProvider _themeProvider;
+  bool _isInitialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _themeProvider = ThemeProvider();
+    _initializeApp();
+  }
+
+  Future<void> _initializeApp() async {
+    await _themeProvider.initializeTheme();
+    setState(() {
+      _isInitialized = true;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (!_isInitialized) {
+      return MaterialApp(
+        home: Scaffold(body: Center(child: CircularProgressIndicator())),
+      );
+    }
+
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => auth_provider.AuthProvider()),
         ChangeNotifierProvider(create: (_) => ChatProvider()),
-        ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider.value(value: _themeProvider),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, _) {

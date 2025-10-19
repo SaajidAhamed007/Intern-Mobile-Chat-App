@@ -5,8 +5,7 @@ import 'package:image_picker/image_picker.dart';
 class ImageSourceBottomSheet extends StatelessWidget {
   final Function(ImageSource) onSourceSelected;
 
-  const ImageSourceBottomSheet({Key? key, required this.onSourceSelected})
-    : super(key: key);
+  const ImageSourceBottomSheet({super.key, required this.onSourceSelected});
 
   @override
   Widget build(BuildContext context) {
@@ -27,7 +26,7 @@ class ImageSourceBottomSheet extends StatelessWidget {
             height: 4,
             margin: const EdgeInsets.only(bottom: 20),
             decoration: BoxDecoration(
-              color: colorScheme.onSurface.withOpacity(0.3),
+              color: colorScheme.onSurface.withValues(alpha:0.3),
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -89,7 +88,7 @@ class ImageSourceBottomSheet extends StatelessWidget {
         width: 100,
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: colorScheme.surfaceVariant,
+          color: colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(12),
         ),
         child: Column(

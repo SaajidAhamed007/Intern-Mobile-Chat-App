@@ -46,6 +46,10 @@ class AuthProvider with ChangeNotifier {
 
   /// Handle Firebase auth state changes
   Future<void> _handleAuthStateChange(User? firebaseUser) async {
+    debugPrint(
+      '🔄 Auth state change: User ${firebaseUser != null ? 'exists' : 'null'}',
+    );
+
     // Only show loading for operations, not for initial state check
     if (!_isInitializing) {
       _isLoading = true;
@@ -56,23 +60,28 @@ class AuthProvider with ChangeNotifier {
     try {
       if (firebaseUser == null) {
         // User is not authenticated
+        debugPrint('❌ User not authenticated');
         _user = null;
         _authState = AuthState.unauthenticated;
       } else {
         // User is authenticated, check if profile exists in Firestore
+        debugPrint('🔍 Checking user profile in Firestore...');
         final userModel = await _authService.getCurrentUser();
 
         if (userModel != null) {
           // User is authenticated and has profile
+          debugPrint('✅ User authenticated with profile: ${userModel.name}');
           _user = userModel;
           _authState = AuthState.authenticated;
         } else {
           // User is authenticated but no profile in Firestore
+          debugPrint('⚠️ User authenticated but no profile in Firestore');
           _user = null;
           _authState = AuthState.authenticatedWithoutProfile;
         }
       }
     } catch (e) {
+      debugPrint('❌ Error in auth state change: $e');
       // Only set error message for operations, not initialization
       if (!_isInitializing) {
         _errorMessage = 'Error checking user state: $e';
@@ -84,7 +93,21 @@ class AuthProvider with ChangeNotifier {
 
     _isInitializing = false;
     _isLoading = false;
+    debugPrint('🎯 Final auth state: $_authState');
+
+    // Ensure UI rebuilds by calling notifyListeners
+    debugPrint('📢 Calling notifyListeners() for state: $_authState');
     notifyListeners();
+
+    // Small delay to ensure UI processes the state change
+    if (_authState == AuthState.authenticated && !_isInitializing) {
+      Future.delayed(const Duration(milliseconds: 100), () {
+        debugPrint(
+          '🔄 Triggering additional UI update for authenticated state',
+        );
+        notifyListeners();
+      });
+    }
   }
 
   /// Create user profile in Firestore (for users who authenticated but don't have profile)
@@ -127,6 +150,7 @@ class AuthProvider with ChangeNotifier {
     String password, {
     String? phoneNumber,
   }) async {
+    debugPrint('📝 Starting signup process for: $email');
     _setLoading(true);
 
     try {
@@ -137,36 +161,59 @@ class AuthProvider with ChangeNotifier {
         phoneNumber: phoneNumber,
       );
       if (newUser != null) {
-        _user = newUser;
-        _authState = AuthState.authenticated;
+        debugPrint('✅ Signup successful for: ${newUser.name}');
+        // Don't manually set state - let the Firebase listener handle it
+        // This prevents conflicts between manual setting and listener
         _clearError();
         await FCMService().saveDeviceToken();
+        debugPrint('🎯 Signup completed, returning true');
         return true;
       } else {
+        debugPrint('❌ Signup failed: newUser is null');
         _setError('Failed to create user account');
         return false;
       }
     } on FirebaseAuthException catch (e) {
+      debugPrint('❌ Firebase Auth Exception: ${e.message}');
       _setError(_getAuthErrorMessage(e));
       return false;
     } catch (e) {
+      debugPrint('❌ General Exception during signup: $e');
       _setError('An unexpected error occurred: $e');
       return false;
     } finally {
       _setLoading(false);
+      debugPrint('🔄 Signup loading set to false');
     }
   }
 
   Future<bool> login(String email, String password) async {
+    debugPrint('🚀 Starting login process...');
     _setLoading(true);
 
     try {
       final loggedUser = await _authService.login(email, password);
       if (loggedUser != null) {
-        _user = loggedUser;
-        _authState = AuthState.authenticated;
+        debugPrint(
+          '🔑 Login successful in AuthService, waiting for listener...',
+        );
         _clearError();
         await FCMService().saveDeviceToken();
+
+        // Give the listener a moment to process, then check state
+        await Future.delayed(const Duration(milliseconds: 500));
+        debugPrint(
+          '🔍 Auth state after login delay: $_authState, User: ${_user?.name}',
+        );
+
+        // If listener hasn't updated state yet, manually trigger a check
+        if (_authState != AuthState.authenticated) {
+          debugPrint(
+            '⚠️ Listener hasn\'t updated state yet, manually checking...',
+          );
+          await _handleAuthStateChange(_authService.currentFirebaseUser);
+        }
+
         return true;
       } else {
         _setError('Failed to login. Please check your credentials.');
@@ -397,6 +444,29 @@ class AuthProvider with ChangeNotifier {
     } catch (e) {
       _setError(e.toString());
       return [];
+    }
+  }
+
+  /// ----------------------------
+  /// 🔹 Refresh User Data
+  /// ----------------------------
+  Future<void> refreshUserData() async {
+    try {
+      final userModel = await _authService.getCurrentUser();
+      if (userModel != null) {
+        _user = userModel;
+        notifyListeners();
+        debugPrint('✅ User data refreshed successfully');
+        debugPrint('   Current user: ${_user?.uid}');
+        debugPrint('   Contact count: ${_user?.contacts.length}');
+        if (_user?.contacts.isNotEmpty == true) {
+          for (final contact in _user!.contacts) {
+            debugPrint('   Contact: ${contact.name} (${contact.id})');
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('❌ Error refreshing user data: $e');
     }
   }
 

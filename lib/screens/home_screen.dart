@@ -27,11 +27,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
   }
 
   @override
-  void dispose() {
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
@@ -69,36 +64,66 @@ class _ChatListScreenState extends State<ChatListScreen> {
           const SizedBox(width: 8),
         ],
       ),
-      body: Consumer<auth_provider.AuthProvider>(
-        builder: (context, authProvider, child) {
-          final contacts = authProvider.userContacts;
+      body: StreamBuilder<List<ChatRoomWithContact>>(
+        stream: _chatService.getActiveChatRoomsStream(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
 
-          // Filter contacts based on search query
-          final filteredContacts = contacts.where((contact) {
-            return contact.name.toLowerCase().contains(
+          if (snapshot.hasError) {
+            debugPrint('Error in active chat rooms stream: ${snapshot.error}');
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.error_outline,
+                    size: 64,
+                    color: theme.colorScheme.error,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Failed to load chats',
+                    style: TextStyle(
+                      fontSize: 18,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          final chatRooms = snapshot.data ?? [];
+
+          // Filter based on search query
+          final filteredChats = chatRooms.where((chatRoom) {
+            return chatRoom.contact.name.toLowerCase().contains(
                   searchQuery.toLowerCase(),
                 ) ||
-                contact.email.toLowerCase().contains(searchQuery.toLowerCase());
+                chatRoom.contact.email.toLowerCase().contains(
+                  searchQuery.toLowerCase(),
+                );
           }).toList();
 
           return Column(
             children: [
-              // 🔍 Search bar (only show if there are contacts)
-              if (contacts.isNotEmpty)
+              // 🔍 Search bar (only show if there are chats)
+              if (chatRooms.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.all(10.0),
                   child: TextField(
                     onChanged: (value) => setState(() => searchQuery = value),
                     decoration: InputDecoration(
-                      hintText: 'Search contacts...',
+                      hintText: 'Search chats...',
                       prefixIcon: Icon(
                         Icons.search,
-                        color: theme.colorScheme.primary.withOpacity(0.8),
+                        color: theme.colorScheme.primary.withValues(alpha: 0.8),
                       ),
                       filled: true,
-                      fillColor: theme.colorScheme.surfaceVariant.withOpacity(
-                        0.4,
-                      ),
+                      fillColor: theme.colorScheme.surfaceContainerHighest
+                          .withValues(alpha: 0.4),
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: 16,
                         vertical: 12,
@@ -111,73 +136,75 @@ class _ChatListScreenState extends State<ChatListScreen> {
                   ),
                 ),
 
-              // 🗂 Contacts list or empty state
+              // 💬 Chat rooms list or empty state
               Expanded(
-                child: contacts.isEmpty
+                child: filteredChats.isEmpty
                     ? Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Icon(
-                              Icons.contacts_outlined,
+                              chatRooms.isEmpty
+                                  ? Icons.chat_bubble_outline
+                                  : Icons.search_off,
                               size: 80,
-                              color: theme.colorScheme.onSurface.withOpacity(
-                                0.3,
+                              color: theme.colorScheme.onSurface.withValues(
+                                alpha: 0.3,
                               ),
                             ),
                             const SizedBox(height: 24),
                             Text(
-                              'No contacts yet',
+                              chatRooms.isEmpty
+                                  ? 'No messages yet'
+                                  : 'No chats match your search',
                               style: TextStyle(
                                 fontSize: 20,
                                 fontWeight: FontWeight.w500,
-                                color: theme.colorScheme.onSurface.withOpacity(
-                                  0.6,
+                                color: theme.colorScheme.onSurface.withValues(
+                                  alpha: 0.6,
                                 ),
                               ),
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              'Add contacts to start chatting',
+                              chatRooms.isEmpty
+                                  ? 'Start chatting with your contacts'
+                                  : 'Try a different search term',
                               style: TextStyle(
                                 fontSize: 14,
-                                color: theme.colorScheme.onSurface.withOpacity(
-                                  0.4,
+                                color: theme.colorScheme.onSurface.withValues(
+                                  alpha: 0.4,
                                 ),
                               ),
                             ),
-                            const SizedBox(height: 24),
-                            ElevatedButton.icon(
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) =>
-                                        const ContactsScreen(),
+                            if (chatRooms.isEmpty) ...[
+                              const SizedBox(height: 24),
+                              ElevatedButton.icon(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          const ContactsScreen(),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(Icons.person_add),
+                                label: const Text('Add Contacts'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: theme.colorScheme.primary,
+                                  foregroundColor: theme.colorScheme.onPrimary,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 24,
+                                    vertical: 12,
                                   ),
-                                );
-                              },
-                              icon: const Icon(Icons.person_add),
-                              label: const Text('Add Contacts'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: theme.colorScheme.primary,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 24,
-                                  vertical: 12,
                                 ),
                               ),
-                            ),
+                            ],
                           ],
                         ),
                       )
-                    : ListView.builder(
-                        itemCount: filteredContacts.length,
-                        itemBuilder: (context, index) {
-                          final contact = filteredContacts[index];
-                          return _buildChatListItem(contact, theme);
-                        },
-                      ),
+                    : _buildActiveChatsList(filteredChats, theme),
               ),
             ],
           );
@@ -196,49 +223,63 @@ class _ChatListScreenState extends State<ChatListScreen> {
     );
   }
 
-  Widget _buildChatListItem(contact, ThemeData theme) {
-    final authProvider = Provider.of<auth_provider.AuthProvider>(
-      context,
-      listen: false,
-    );
-    final currentUserId = authProvider.user?.uid ?? '';
+  // Build active chats list
+  Widget _buildActiveChatsList(
+    List<ChatRoomWithContact> chatRooms,
+    ThemeData theme,
+  ) {
+    return ListView.builder(
+      itemCount: chatRooms.length,
+      itemBuilder: (context, index) {
+        final chatRoom = chatRooms[index];
+        final contact = chatRoom.contact;
 
-    return StreamBuilder<Map<String, dynamic>>(
-      stream: _chatService.getChatSummaryStream(contact.id),
-      builder: (context, snapshot) {
-        // Handle loading state
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return _buildLoadingChatItem(contact, theme);
-        }
+        return Container(
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: theme.colorScheme.outline.withValues(alpha: 0.1),
+                width: 0.5,
+              ),
+            ),
+          ),
+          child: StreamBuilder<Map<String, dynamic>>(
+            stream: _chatService.getChatSummaryStream(contact.id),
+            builder: (context, snapshot) {
+              // Handle loading state
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return _buildLoadingChatItem(contact, theme);
+              }
 
-        // Handle error state
-        if (snapshot.hasError) {
-          debugPrint('Error in chat summary stream: ${snapshot.error}');
-          return _buildBasicChatItem(contact, theme);
-        }
+              // Handle error state
+              if (snapshot.hasError) {
+                return _buildBasicChatItem(contact, theme);
+              }
 
-        // Handle data - provide safe defaults
-        final chatData = snapshot.hasData && snapshot.data != null
-            ? snapshot.data!
-            : <String, dynamic>{'lastMessage': null, 'unreadCount': 0};
+              // Handle data - provide safe defaults
+              final chatData = snapshot.hasData && snapshot.data != null
+                  ? snapshot.data!
+                  : <String, dynamic>{'lastMessage': null, 'unreadCount': 0};
 
-        // Debug print to see if stream is updating
-        if (snapshot.hasData) {
-          debugPrint(
-            'Chat summary for ${contact.name}: lastMessage=${chatData['lastMessage']?.message ?? 'null'}, unreadCount=${chatData['unreadCount']}',
-          );
-        }
+              final lastMessage = chatData['lastMessage'] as MessageModel?;
+              final unreadCount = (chatData['unreadCount'] as int?) ?? 0;
 
-        final lastMessage = chatData['lastMessage'] as MessageModel?;
-        final unreadCount = (chatData['unreadCount'] as int?) ?? 0;
+              final chatListItem = ChatListItem(
+                contact: contact,
+                lastMessage: lastMessage,
+                unreadCount: unreadCount,
+              );
 
-        final chatListItem = ChatListItem(
-          contact: contact,
-          lastMessage: lastMessage,
-          unreadCount: unreadCount,
+              final authProvider = Provider.of<auth_provider.AuthProvider>(
+                context,
+                listen: false,
+              );
+              final currentUserId = authProvider.user?.uid ?? '';
+
+              return _buildChatItemContent(chatListItem, currentUserId, theme);
+            },
+          ),
         );
-
-        return _buildChatItemContent(chatListItem, currentUserId, theme);
       },
     );
   }
@@ -248,7 +289,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
       decoration: BoxDecoration(
         border: Border(
           bottom: BorderSide(
-            color: theme.colorScheme.outline.withOpacity(0.1),
+            color: theme.colorScheme.outline.withValues(alpha: 0.1),
             width: 0.5,
           ),
         ),
@@ -271,13 +312,13 @@ class _ChatListScreenState extends State<ChatListScreen> {
         subtitle: Text(
           'Loading...',
           style: TextStyle(
-            color: theme.colorScheme.onSurface.withOpacity(0.6),
+            color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
             fontSize: 14,
           ),
         ),
         trailing: Icon(
           Icons.chat_bubble_outline,
-          color: theme.colorScheme.primary.withOpacity(0.6),
+          color: theme.colorScheme.primary.withValues(alpha: 0.6),
           size: 16,
         ),
         onTap: () {
@@ -297,7 +338,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
       decoration: BoxDecoration(
         border: Border(
           bottom: BorderSide(
-            color: theme.colorScheme.outline.withOpacity(0.1),
+            color: theme.colorScheme.outline.withValues(alpha: 0.1),
             width: 0.5,
           ),
         ),
@@ -320,13 +361,13 @@ class _ChatListScreenState extends State<ChatListScreen> {
         subtitle: Text(
           'Tap to start chatting',
           style: TextStyle(
-            color: theme.colorScheme.onSurface.withOpacity(0.6),
+            color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
             fontSize: 14,
           ),
         ),
         trailing: Icon(
           Icons.chat_bubble_outline,
-          color: theme.colorScheme.primary.withOpacity(0.6),
+          color: theme.colorScheme.primary.withValues(alpha: 0.6),
           size: 16,
         ),
         onTap: () {
@@ -354,7 +395,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
       decoration: BoxDecoration(
         border: Border(
           bottom: BorderSide(
-            color: theme.colorScheme.outline.withOpacity(0.1),
+            color: theme.colorScheme.outline.withValues(alpha: 0.1),
             width: 0.5,
           ),
         ),
@@ -388,7 +429,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
                       style: TextStyle(
                         color: unreadCount > 0
                             ? theme.colorScheme.onSurface
-                            : theme.colorScheme.onSurface.withOpacity(0.6),
+                            : theme.colorScheme.onSurface.withValues(
+                                alpha: 0.6,
+                              ),
                         fontSize: 14,
                         fontWeight: unreadCount > 0
                             ? FontWeight.w500
@@ -403,7 +446,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
             : Text(
                 'Tap to start chatting',
                 style: TextStyle(
-                  color: theme.colorScheme.onSurface.withOpacity(0.6),
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                   fontSize: 14,
                 ),
               ),
@@ -417,7 +460,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 style: TextStyle(
                   color: unreadCount > 0
                       ? theme.colorScheme.primary
-                      : theme.colorScheme.onSurface.withOpacity(0.6),
+                      : theme.colorScheme.onSurface.withValues(alpha: 0.6),
                   fontSize: 12,
                   fontWeight: unreadCount > 0
                       ? FontWeight.bold
@@ -465,7 +508,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
         return Icon(
           Icons.access_time,
           size: 16,
-          color: theme.colorScheme.onSurface.withOpacity(0.6),
+          color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
         );
       case 'failed':
         return Icon(
@@ -477,13 +520,13 @@ class _ChatListScreenState extends State<ChatListScreen> {
         return Icon(
           Icons.done,
           size: 16,
-          color: theme.colorScheme.onSurface.withOpacity(0.6),
+          color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
         );
       case 'delivered':
         return Icon(
           Icons.done_all,
           size: 16,
-          color: theme.colorScheme.onSurface.withOpacity(0.6),
+          color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
         );
       case 'seen':
         return Icon(Icons.done_all, size: 16, color: theme.colorScheme.primary);
@@ -494,7 +537,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
           size: 16,
           color: message.isSeen
               ? theme.colorScheme.primary
-              : theme.colorScheme.onSurface.withOpacity(0.6),
+              : theme.colorScheme.onSurface.withValues(alpha: 0.6),
         );
     }
   }
