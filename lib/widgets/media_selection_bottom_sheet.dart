@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import '../services/unified_upload_service.dart';
 
 class MediaSelectionBottomSheet extends StatelessWidget {
-  final Function(String mediaType, ImageSource? source) onMediaSelected;
+  final Function(MediaType mediaType, ImageSource? source) onMediaSelected;
 
   const MediaSelectionBottomSheet({super.key, required this.onMediaSelected});
 
   static Future<void> show(
     BuildContext context, {
-    required Function(String mediaType, ImageSource? source) onMediaSelected,
+    required Function(MediaType mediaType, ImageSource? source) onMediaSelected,
   }) {
     return showModalBottomSheet(
       context: context,
@@ -76,7 +77,7 @@ class MediaSelectionBottomSheet extends StatelessWidget {
                         color: Colors.blue,
                         onTap: () {
                           Navigator.pop(context);
-                          onMediaSelected('image', ImageSource.camera);
+                          onMediaSelected(MediaType.image, ImageSource.camera);
                         },
                       ),
                     ),
@@ -90,7 +91,7 @@ class MediaSelectionBottomSheet extends StatelessWidget {
                         color: Colors.green,
                         onTap: () {
                           Navigator.pop(context);
-                          onMediaSelected('image', ImageSource.gallery);
+                          onMediaSelected(MediaType.image, ImageSource.gallery);
                         },
                       ),
                     ),
@@ -111,7 +112,7 @@ class MediaSelectionBottomSheet extends StatelessWidget {
                         color: Colors.red,
                         onTap: () {
                           Navigator.pop(context);
-                          onMediaSelected('video', ImageSource.camera);
+                          onMediaSelected(MediaType.video, ImageSource.camera);
                         },
                       ),
                     ),
@@ -125,7 +126,7 @@ class MediaSelectionBottomSheet extends StatelessWidget {
                         color: Colors.purple,
                         onTap: () {
                           Navigator.pop(context);
-                          onMediaSelected('video', ImageSource.gallery);
+                          onMediaSelected(MediaType.video, ImageSource.gallery);
                         },
                       ),
                     ),
@@ -143,7 +144,7 @@ class MediaSelectionBottomSheet extends StatelessWidget {
                   color: Colors.orange,
                   onTap: () {
                     Navigator.pop(context);
-                    onMediaSelected('audio', null);
+                    onMediaSelected(MediaType.audio, null);
                   },
                 ),
               ],

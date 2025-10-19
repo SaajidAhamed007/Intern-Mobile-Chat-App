@@ -17,104 +17,110 @@ class ChatService {
     return '${userIds[0]}_${userIds[1]}';
   }
 
-Future<void> sendPushNotification(String fcmToken, String title, String body) async {
-  final url = Uri.parse("http://10.166.122.43:3000/send-notification"); // your Node.js server URL
-  final payload = {
-    'fcmToken': fcmToken,
-    'title': title,
-    'body': body,
-  };
+  Future<void> sendPushNotification(
+    String fcmToken,
+    String title,
+    String body,
+  ) async {
+    final url = Uri.parse("http://10.166.122.43:3000/send-notification");
+    final payload = {'fcmToken': fcmToken, 'title': title, 'body': body};
 
-  print("📤 Sending notification to server: $payload");
+    print("📤 Sending notification to server: $payload");
 
-  try {
-    final response = await http.post(
-      url,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(payload),
-    );
+    try {
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(payload),
+      );
 
-    print("📥 Response from server: ${response.statusCode} - ${response.body}");
-  } catch (e) {
-    print("❌ Error while sending notification: $e");
-  }
-}
-
-Future<void> sendMessage({
-  required String receiverId,
-  required String message,
-  String type = 'text',
-}) async {
-  try {
-    final senderId = currentUserId;
-    if (senderId.isEmpty) {
-      debugPrint("❌ Sender ID empty");
-      return;
+      print(
+        "📥 Response from server: ${response.statusCode} - ${response.body}",
+      );
+    } catch (e) {
+      print("❌ Error while sending notification: $e");
     }
-
-    final chatRoomId = getChatRoomId(senderId, receiverId);
-    final messageId = _firestore
-        .collection('chats')
-        .doc(chatRoomId)
-        .collection('messages')
-        .doc()
-        .id;
-
-    // 🔹 Firestore message data
-    final messageData = {
-      'messageId': messageId,
-      'senderId': senderId,
-      'receiverId': receiverId,
-      'message': message,
-      'type': type,
-      'timestamp': FieldValue.serverTimestamp(),
-      'isSeen': false,
-      'status': 'sent',
-    };
-
-    // 🔹 Create/update chat room
-    await _firestore.collection('chats').doc(chatRoomId).set({
-      'chatRoomId': chatRoomId,
-      'participants': [senderId, receiverId],
-      'lastMessage': message,
-      'lastMessageSenderId': senderId,
-      'lastMessageTime': FieldValue.serverTimestamp(),
-      'createdAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-
-    // 🔹 Add message to Firestore
-    await _firestore
-        .collection('chats')
-        .doc(chatRoomId)
-        .collection('messages')
-        .doc(messageId)
-        .set(messageData);
-
-    // 🔹 Get sender name
-    final senderDoc = await _firestore.collection('users').doc(senderId).get();
-    final senderName = senderDoc.data()?['name'] ?? 'Someone';
-
-    // 🔹 Get receiver’s FCM token
-    final receiverDoc =
-        await _firestore.collection('users').doc(receiverId).get();
-    final fcmToken = receiverDoc.data()?['fcmToken'];
-
-    if (fcmToken == null || fcmToken.isEmpty) {
-      debugPrint("⚠️ No FCM token found for receiver");
-      return;
-    }
-
-    // 🔹 Send notification: show sender name + message
-    await sendPushNotification(
-      fcmToken,
-      "$senderName 💬", // ✅ title shows sender name
-      message,           // ✅ body shows the message text
-    );
-
-  } catch (e) {
-    debugPrint('❌ Error sending message: $e');
   }
-}
+
+  Future<void> sendMessage({
+    required String receiverId,
+    required String message,
+    String type = 'text',
+  }) async {
+    try {
+      final senderId = currentUserId;
+      if (senderId.isEmpty) {
+        debugPrint("❌ Sender ID empty");
+        return;
+      }
+
+      final chatRoomId = getChatRoomId(senderId, receiverId);
+      final messageId = _firestore
+          .collection('chats')
+          .doc(chatRoomId)
+          .collection('messages')
+          .doc()
+          .id;
+
+      // 🔹 Firestore message data
+      final messageData = {
+        'messageId': messageId,
+        'senderId': senderId,
+        'receiverId': receiverId,
+        'message': message,
+        'type': type,
+        'timestamp': FieldValue.serverTimestamp(),
+        'isSeen': false,
+        'status': 'sent',
+      };
+
+      // 🔹 Create/update chat room
+      await _firestore.collection('chats').doc(chatRoomId).set({
+        'chatRoomId': chatRoomId,
+        'participants': [senderId, receiverId],
+        'lastMessage': message,
+        'lastMessageSenderId': senderId,
+        'lastMessageTime': FieldValue.serverTimestamp(),
+        'createdAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      // 🔹 Add message to Firestore
+      await _firestore
+          .collection('chats')
+          .doc(chatRoomId)
+          .collection('messages')
+          .doc(messageId)
+          .set(messageData);
+
+      // 🔹 Get sender name
+      final senderDoc = await _firestore
+          .collection('users')
+          .doc(senderId)
+          .get();
+      final senderName = senderDoc.data()?['name'] ?? 'Someone';
+
+      // 🔹 Get receiver’s FCM token
+      final receiverDoc = await _firestore
+          .collection('users')
+          .doc(receiverId)
+          .get();
+      final fcmToken = receiverDoc.data()?['fcmToken'];
+
+      if (fcmToken == null || fcmToken.isEmpty) {
+        debugPrint("⚠️ No FCM token found for receiver");
+        return;
+      }
+
+      // 🔹 Send notification: show sender name + message
+      await sendPushNotification(
+        fcmToken,
+        "$senderName 💬", // ✅ title shows sender name
+        message, // ✅ body shows the message text
+      );
+    } catch (e) {
+      debugPrint('❌ Error sending message: $e');
+    }
+  }
 
   /// ✅ Stream messages in ascending order (oldest → newest)
   Stream<List<MessageModel>> getMessagesStream(String otherUserId) {

@@ -123,7 +123,11 @@ class ChatProvider with ChangeNotifier {
   }
 
   /// Send a text message with immediate UI update
-  Future<bool> sendMessage(String message, {String type = 'text'}) async {
+  Future<bool> sendMessage(
+    String message, {
+    String type = 'text',
+    String? tempMessageId,
+  }) async {
     if (_currentChatUserId == null || message.trim().isEmpty || _isSending) {
       return false;
     }
@@ -132,29 +136,40 @@ class ChatProvider with ChangeNotifier {
     _clearError();
     notifyListeners();
 
-    // Generate a temporary message ID
-    final tempMessageId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
+    // Generate a temporary message ID if not provided
+    final messageId =
+        tempMessageId ?? 'temp_${DateTime.now().millisecondsSinceEpoch}';
 
-    // Create a pending message that appears immediately in UI
-    // Note: Uses local timestamp for immediate display, but server will use
-    // server timestamp for proper ordering
-    final pendingMessage = MessageModel(
-      messageId: tempMessageId,
-      senderId: currentUserId,
-      receiverId: _currentChatUserId!,
-      message: message.trim(),
-      type: type,
-      timestamp: DateTime.now(), // Local time for pending display
-      isSeen: false,
-      status: 'pending', // This will show the clock icon
-    );
+    // If tempMessageId is provided, update existing message, otherwise create new one
+    if (tempMessageId != null) {
+      // Update existing pending message with the uploaded URL
+      final messageIndex = _messages.indexWhere(
+        (msg) => msg.messageId == tempMessageId,
+      );
+      if (messageIndex != -1) {
+        _messages[messageIndex] = _messages[messageIndex].copyWith(
+          message: message.trim(),
+          status: 'sending',
+        );
+        notifyListeners();
+      }
+    } else {
+      // Create a pending message that appears immediately in UI
+      final pendingMessage = MessageModel(
+        messageId: messageId,
+        senderId: currentUserId,
+        receiverId: _currentChatUserId!,
+        message: message.trim(),
+        type: type,
+        timestamp: DateTime.now(), // Local time for pending display
+        isSeen: false,
+        status: 'pending', // This will show the clock icon
+      );
 
-    // Add the pending message to UI immediately
-    _messages.insert(
-      0,
-      pendingMessage,
-    ); // Insert at beginning since we use reverse order
-    notifyListeners();
+      // Add the pending message to UI immediately
+      _messages.insert(0, pendingMessage);
+      notifyListeners();
+    }
 
     try {
       // Send the actual message to server
@@ -173,7 +188,7 @@ class ChatProvider with ChangeNotifier {
     } catch (e) {
       // If sending failed, update status to failed
       final messageIndex = _messages.indexWhere(
-        (msg) => msg.messageId == tempMessageId,
+        (msg) => msg.messageId == messageId,
       );
       if (messageIndex != -1) {
         _messages[messageIndex] = _messages[messageIndex].copyWith(
@@ -197,6 +212,25 @@ class ChatProvider with ChangeNotifier {
     } catch (e) {
       // Silent error - marking as seen is not critical
       debugPrint('Error marking messages as seen: $e');
+    }
+  }
+
+  /// Add a pending message for immediate UI update
+  void addPendingMessage(MessageModel message) {
+    _messages.insert(0, message);
+    notifyListeners();
+  }
+
+  /// Update message status (for retry mechanisms)
+  void updateMessageStatus(String messageId, String status) {
+    final messageIndex = _messages.indexWhere(
+      (msg) => msg.messageId == messageId,
+    );
+    if (messageIndex != -1) {
+      _messages[messageIndex] = _messages[messageIndex].copyWith(
+        status: status,
+      );
+      notifyListeners();
     }
   }
 

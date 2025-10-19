@@ -1,66 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
-class ImageSourceDialog extends StatelessWidget {
-  final Function(ImageSource) onSourceSelected;
-
-  const ImageSourceDialog({Key? key, required this.onSourceSelected})
-    : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return AlertDialog(
-      title: const Text('Select Image Source'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            leading: Icon(Icons.photo_camera, color: colorScheme.primary),
-            title: const Text('Camera'),
-            subtitle: const Text('Take a new photo'),
-            onTap: () {
-              Navigator.of(context).pop();
-              onSourceSelected(ImageSource.camera);
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.photo_library, color: colorScheme.primary),
-            title: const Text('Gallery'),
-            subtitle: const Text('Choose from gallery'),
-            onTap: () {
-              Navigator.of(context).pop();
-              onSourceSelected(ImageSource.gallery);
-            },
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-      ],
-    );
-  }
-
-  /// Show the image source selection dialog
-  static Future<void> show(
-    BuildContext context, {
-    required Function(ImageSource) onSourceSelected,
-  }) async {
-    return showDialog<void>(
-      context: context,
-      builder: (BuildContext context) {
-        return ImageSourceDialog(onSourceSelected: onSourceSelected);
-      },
-    );
-  }
-}
-
-/// Bottom sheet alternative for image source selection
+/// Bottom sheet for image source selection
 class ImageSourceBottomSheet extends StatelessWidget {
   final Function(ImageSource) onSourceSelected;
 

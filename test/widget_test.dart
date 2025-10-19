@@ -11,13 +11,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:internchat/main.dart';
 
 void main() {
-  testWidgets('App starts and shows authentication', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('App loads correctly', (WidgetTester tester) async {
     // Build our app and trigger a frame.
     await tester.pumpWidget(const HasaApp());
 
-    // Verify that our app starts
+    // Verify that the app loads
     expect(find.byType(MaterialApp), findsOneWidget);
   });
 }

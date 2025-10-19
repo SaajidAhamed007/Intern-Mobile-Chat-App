@@ -10,10 +10,21 @@ class ThemeProvider with ChangeNotifier {
 
   ThemeData get lightTheme => ThemeData(
     useMaterial3: true,
-    colorScheme: ColorScheme.fromSeed(
-      seedColor: const Color(0xFF6750A4),
-      brightness: Brightness.light,
-    ),
+    colorScheme:
+        ColorScheme.fromSeed(
+          seedColor: const Color(0xFF6366F1), // Beautiful bluish violet
+          brightness: Brightness.light,
+        ).copyWith(
+          primary: const Color(0xFF6366F1), // Indigo-500
+          primaryContainer: const Color(0xFFE0E7FF), // Indigo-100
+          secondary: const Color(0xFF8B5CF6), // Violet-500
+          secondaryContainer: const Color(0xFFF3E8FF), // Violet-100
+          tertiary: const Color(0xFF3B82F6), // Blue-500
+          tertiaryContainer: const Color(0xFFDBEAFE), // Blue-100
+          surface: const Color(0xFFFAFAFC),
+          surfaceVariant: const Color(0xFFF1F5F9),
+          outline: const Color(0xFFCBD5E1),
+        ),
     appBarTheme: const AppBarTheme(
       centerTitle: true,
       elevation: 0,
@@ -48,10 +59,24 @@ class ThemeProvider with ChangeNotifier {
 
   ThemeData get darkTheme => ThemeData(
     useMaterial3: true,
-    colorScheme: ColorScheme.fromSeed(
-      seedColor: const Color(0xFF6750A4),
-      brightness: Brightness.dark,
-    ),
+    colorScheme:
+        ColorScheme.fromSeed(
+          seedColor: const Color(0xFF6366F1), // Beautiful bluish violet
+          brightness: Brightness.dark,
+        ).copyWith(
+          primary: const Color(
+            0xFF818CF8,
+          ), // Indigo-400 (lighter for dark mode)
+          primaryContainer: const Color(0xFF3730A3), // Indigo-800
+          secondary: const Color(0xFFA78BFA), // Violet-400
+          secondaryContainer: const Color(0xFF6B21A8), // Violet-800
+          tertiary: const Color(0xFF60A5FA), // Blue-400
+          tertiaryContainer: const Color(0xFF1E3A8A), // Blue-800
+          surface: const Color(0xFF0F0F23),
+          surfaceVariant: const Color(0xFF1E1B3A),
+          outline: const Color(0xFF475569),
+          onSurface: const Color(0xFFE2E8F0),
+        ),
     appBarTheme: const AppBarTheme(
       centerTitle: true,
       elevation: 0,
